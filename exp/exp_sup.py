@@ -283,13 +283,13 @@ class Exp_All_Task(object):
                   pretrain_weight_path, folder=self.path)
             if 'pretrain_checkpoint.pth' in pretrain_weight_path:
                 state_dict = torch.load(
-                    pretrain_weight_path, map_location='cpu')['student']
+                    pretrain_weight_path, map_location='cpu', weights_only=False)['student']
                 ckpt = {}
                 for k, v in state_dict.items():
                     if not ('cls_prompts' in k):
                         ckpt[k] = v
             else:
-                ckpt = torch.load(pretrain_weight_path, map_location='cpu')
+                ckpt = torch.load(pretrain_weight_path, map_location='cpu', weights_only=False)
             msg = self.model.load_state_dict(ckpt, strict=False)
             print(msg, folder=self.path)
 
@@ -542,13 +542,13 @@ class Exp_All_Task(object):
                       pretrain_weight_path, folder=self.path)
                 if 'pretrain_checkpoint.pth' in pretrain_weight_path:
                     state_dict = torch.load(
-                        pretrain_weight_path, map_location='cpu')['student']
+                        pretrain_weight_path, map_location='cpu', weights_only=False)['student']
                     ckpt = {}
                     for k, v in state_dict.items():
                         if not ('cls_prompts' in k):
                             ckpt[k] = v
                 else:
-                    ckpt = torch.load(pretrain_weight_path, map_location='cpu')
+                    ckpt = torch.load(pretrain_weight_path, map_location='cpu', weights_only=False)
                 msg = self.model.load_state_dict(ckpt, strict=False)
                 print(msg)
             else:
@@ -828,6 +828,41 @@ class Exp_All_Task(object):
             accuracy, precision,
             recall, f_score))
 
+
+        # ── ESA-PATCH: export anomaly timestamps to CSV ──────────────────────
+        try:
+            import pandas as _pd
+            _root = self.task_data_config_list[task_id][1].get('root_path', '.')
+            _dname = self.task_data_config_list[task_id][1].get('dataset_name', data_task_name)
+            _ts_npy = os.path.join(_root, f"{_dname}_test_timestamps.npy")
+            if os.path.exists(_ts_npy):
+                _ts = np.load(_ts_npy, allow_pickle=True)
+                _n  = min(len(_ts), len(pred), len(test_energy), len(gt))
+                _df = _pd.DataFrame({
+                    "timestamp":               _ts[:_n],
+                    "anomaly_score":           test_energy[:_n],
+                    "is_anomaly_predicted":    pred[:_n].astype(int),
+                    "is_anomaly_ground_truth": gt[:_n].astype(int),
+                })
+                _out = os.path.join(self.path, "anomaly_results")
+                os.makedirs(_out, exist_ok=True)
+                _df.to_csv(os.path.join(_out, f"{data_task_name}_points.csv"), index=False)
+                # Contiguous anomaly windows
+                _mask = _df["is_anomaly_predicted"] == 1
+                _df["_blk"] = (_mask != _mask.shift()).cumsum()
+                _wins = _df[_mask].groupby("_blk").agg(
+                    start=("timestamp", "first"),
+                    end=("timestamp", "last"),
+                    peak_score=("anomaly_score", "max"),
+                    n_points=("timestamp", "count"),
+                ).reset_index(drop=True)
+                _wins.to_csv(os.path.join(_out, f"{data_task_name}_windows.csv"), index=False)
+                print(f"Anomaly CSVs → {_out}")
+                if len(_wins):
+                    print(_wins.to_string(index=False))
+        except Exception as _e:
+            print(f"WARNING: timestamp export failed: {_e}")
+        # ── end ESA-PATCH ────────────────────────────────────────────────────
         return f_score
 
     def test_long_term_forecast_offset_unify(self, setting, test_data, test_loader, data_task_name, task_id):

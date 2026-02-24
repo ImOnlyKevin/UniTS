@@ -1032,3 +1032,57 @@ def context_based_split(X, is_pad, context_len: int):
     pad_by_sample = np.any(pad_new, axis=1)
 
     return Xnew[~pad_by_sample, :]
+
+
+class ESASegLoader(Dataset):
+    """
+    Anomaly detection dataset loader for ESA-ADB satellite telemetry.
+
+    Expects files produced by scripts/prepare_esa_data.py inside root_path:
+      {dataset_name}_train.npy          float32  [T_train, C]
+      {dataset_name}_test.npy           float32  [T_test,  C]
+      {dataset_name}_test_label.npy     int32    [T_test]
+
+    dataset_name is inferred from the last path component of root_path,
+    e.g.  root_path="../dataset/ESA-Mission1"  →  dataset_name="ESA-Mission1"
+    """
+
+    def __init__(self, root_path, win_size, step=1, flag="train"):
+        self.flag     = flag
+        self.step     = step
+        self.win_size = win_size
+        self.scaler   = StandardScaler()
+
+        name = os.path.basename(root_path.rstrip("/\\"))
+
+        raw_train = np.load(os.path.join(root_path, f"{name}_train.npy"))
+        raw_test  = np.load(os.path.join(root_path, f"{name}_test.npy"))
+
+        self.scaler.fit(raw_train)
+        self.train = self.scaler.transform(raw_train)
+        self.test  = self.scaler.transform(raw_test)
+        self.val   = self.train[int(len(self.train) * 0.8):]
+
+        self.test_labels = np.load(
+            os.path.join(root_path, f"{name}_test_label.npy"))
+
+    def __len__(self):
+        # ESA-NONOLAP: test uses non-overlapping windows (step=win_size) for fast evaluation
+        if   self.flag == "train": return (self.train.shape[0] - self.win_size) // self.step + 1
+        elif self.flag == "val":   return (self.val.shape[0]   - self.win_size) // self.step + 1
+        elif self.flag == "test":  return (self.test.shape[0]  - self.win_size) // self.win_size + 1
+        else:                      return (self.test.shape[0]  - self.win_size) // self.win_size + 1
+
+    def __getitem__(self, index):
+        dummy = np.float32(self.test_labels[:self.win_size])   # used for train/val
+        if self.flag == "train":
+            i = index * self.step
+            return np.float32(self.train[i:i+self.win_size]), dummy
+        elif self.flag == "val":
+            i = index * self.step
+            return np.float32(self.val[i:i+self.win_size]), dummy
+        else:
+            # ESA-NONOLAP: both test and thre use non-overlapping windows
+            b = index * self.win_size
+            return (np.float32(self.test[b:b+self.win_size]),
+                    np.float32(self.test_labels[b:b+self.win_size]))

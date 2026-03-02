@@ -135,3 +135,12 @@ checkpoints
 logs
 # Ignore raw ESA dataset
 /data/ESA-ADB-raw/
+wandb/
+results/
+dataset/
+checkpoints/
+data/ESA-ADB-raw/
+newcheckpoints/
+logs/
+*.npy
+*.zip

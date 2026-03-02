@@ -129,10 +129,18 @@ def load_channel(raw_dir: Path, channel_name: str,
     df = df.rename(columns={channel_name: "value"})
     df["label"] = LABEL_NOMINAL
 
+    # Ordinal-encode categorical channels (physical_unit_8 / string dtype)
+    # Maps value_0->0, value_1->1, etc. preserving state information numerically
+    if df["value"].dtype == object:
+        categories = sorted(df["value"].dropna().unique())
+        mapping = {v: i for i, v in enumerate(categories)}
+        df["value"] = df["value"].map(mapping).astype(float)
+
     # Derivative for monotonic counter channels (channels 4–11)
     try:
         chan_num = int(channel_name.split("_")[1])
         if 4 <= chan_num <= 11:
+            df["value"] = pd.to_numeric(df["value"], errors="coerce").ffill()
             df["value"] = np.diff(df["value"].values, append=df["value"].values[-1])
     except (IndexError, ValueError):
         pass
@@ -221,12 +229,12 @@ def main():
         # Train slice
         t = df[df.index <= train_end].reindex(train_index)
         t["value"] = t["value"].ffill().bfill()
-        train_arr[:, i] = t["value"].values.astype(np.float32)
+        train_arr[:, i] = pd.to_numeric(t["value"], errors="coerce").ffill().bfill().values.astype(np.float32)
 
         # Test slice — values
         s = df[df.index >= test_start].reindex(test_index)
         s["value"] = s["value"].ffill().bfill()
-        test_arr[:, i] = s["value"].values.astype(np.float32)
+        test_arr[:, i] = pd.to_numeric(s["value"], errors="coerce").ffill().bfill().values.astype(np.float32)
 
         # Test labels — OR across channels: anomaly if ANY channel is annotated
         s_label = s["label"].fillna(LABEL_NOMINAL).astype(int).values
@@ -236,13 +244,13 @@ def main():
     # ── NaN safety ───────────────────────────────────────────────────────
     if np.isnan(train_arr).any():
         print("  WARNING: NaNs in train — filling with column means.")
-        col_means = np.nanmean(train_arr, axis=0, keepdims=True)
+        col_means = np.nan_to_num(np.nanmean(train_arr, axis=0, keepdims=True))
         mask = np.isnan(train_arr)
         train_arr = np.where(mask, np.broadcast_to(col_means, train_arr.shape), train_arr)
 
     if np.isnan(test_arr).any():
         print("  WARNING: NaNs in test — filling with column means.")
-        col_means = np.nanmean(test_arr, axis=0, keepdims=True)
+        col_means = np.nan_to_num(np.nanmean(test_arr, axis=0, keepdims=True))
         mask = np.isnan(test_arr)
         test_arr = np.where(mask, np.broadcast_to(col_means, test_arr.shape), test_arr)
 

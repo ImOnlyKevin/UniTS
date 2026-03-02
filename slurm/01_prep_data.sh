@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 
 # Run from UniTS root:  sbatch slurm/01_prep_data.sh
 set -euo pipefail
@@ -19,12 +19,40 @@ source activate ARGUS
 
 pip install --quiet tqdm pandas numpy scikit-learn
 
-echo "=== Step 1: Prepare ESA-ADB data ==="
-python scripts/prepare_esa_data.py
+# Allow caller to target one or both missions, e.g.:
+#   MISSIONS=ESA-Mission2 sbatch slurm/01_prep_data.sh
+MISSIONS=${MISSIONS:-"ESA-Mission1 ESA-Mission2"}
+echo "Missions to prep: $MISSIONS"
 
-# Count channels — python used instead of wc -l to avoid off-by-one on files without trailing newline
-CHAN_COUNT=$(python -c "
-with open('dataset/ESA-Mission1/ESA-Mission1_channels.txt') as f:
-    print(len([l for l in f.read().splitlines() if l.strip()]))
-")
-echo "Channel count: $CHAN_COUNT"
+for MISSION in $MISSIONS; do
+    echo ""
+    echo "=== Preparing $MISSION ==="
+
+    case "$MISSION" in
+        ESA-Mission1)
+            TRAIN_END="2006-10-01"
+            TEST_START="2007-01-01"
+            ;;
+        ESA-Mission2)
+            TRAIN_END="2002-09-01"
+            TEST_START="2002-10-01"
+            ;;
+        *)
+            echo "ERROR: unknown mission '$MISSION' — add its date range to this script"
+            exit 1
+            ;;
+    esac
+
+    python scripts/prepare_esa_data.py \
+        --raw_dir  "data/ESA-ADB-raw/${MISSION}" \
+        --out_dir  "dataset/${MISSION}" \
+        --name     "$MISSION" \
+        --train_end  "$TRAIN_END" \
+        --test_start "$TEST_START"
+
+    echo "${MISSION} prep done."
+    ls -lh "dataset/${MISSION}/"
+done
+
+echo ""
+echo "=== All prep complete ==="

@@ -29,6 +29,7 @@ import glob
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from sklearn.preprocessing import StandardScaler
 
 
 def parse_args():
@@ -53,6 +54,9 @@ def parse_args():
     p.add_argument("--downsample",     type=int, default=1,
                    help="Keep every Nth row (default: 1 = no downsampling). "
                         "Use 2 for 1-minute resolution, 10 for 5-minute resolution.")
+    p.add_argument("--include_scaled", action="store_true",
+                   help="Also export StandardScaler z-scored values as {channel}_z columns. "
+                        "These match what the model sees and help explain why a channel was flagged.")
     return p.parse_args()
 
 
@@ -139,20 +143,34 @@ def main():
     points_sub = points_sub.iloc[::args.downsample].reset_index(drop=True)
 
     # ── Build output DataFrame ────────────────────────────────────────────
+    n_extra = 3 + (len(selected_names) if args.include_scaled else 0)
     print(f"\nBuilding output table: {len(points_sub):,} rows x "
-          f"{len(selected_names) + 3} columns ...")
+          f"{len(selected_names) + n_extra} columns ...")
 
     channel_df = pd.DataFrame(
         test_sub[:, col_indices],
         columns=selected_names,
     )
 
-    out_df = pd.concat([
+    parts = [
         points_sub[["timestamp"]].reset_index(drop=True),
         channel_df,
+    ]
+
+    if args.include_scaled:
+        train_arr = np.load(dataset_dir / f"{args.mission}_train.npy")
+        scaler = StandardScaler()
+        scaler.fit(train_arr[:, col_indices])
+        scaled = scaler.transform(test_sub[:, col_indices])
+        parts.append(pd.DataFrame(scaled, columns=[f"{n}_z" for n in selected_names]))
+        print(f"  Scaled columns : {len(selected_names)} ({selected_names[0]}_z … {selected_names[-1]}_z)")
+
+    parts.append(
         points_sub[["anomaly_score", "is_anomaly_predicted",
-                    "is_anomaly_ground_truth"]].reset_index(drop=True),
-    ], axis=1)
+                    "is_anomaly_ground_truth"]].reset_index(drop=True)
+    )
+
+    out_df = pd.concat(parts, axis=1)
 
     # ── Save as Parquet (snappy compression) ──────────────────────────────
     print(f"Saving to {out_path} ...")

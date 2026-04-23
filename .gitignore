@@ -144,3 +144,5 @@ newcheckpoints/
 logs/
 *.npy
 *.zip
+
+/data/

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-export_telemetry.py — Export satellite telemetry + anomaly predictions to CSV
+export_telemetry.py — Export satellite telemetry + anomaly predictions to Parquet
 
 Output format (wide): one row per timestamp, one column per channel, plus
 anomaly_score, is_anomaly_predicted, is_anomaly_ground_truth columns.
@@ -12,15 +12,15 @@ Usage:
     python scripts/export_telemetry.py --mission ESA-Mission2
 
     # Limit to a time window
-    python scripts/export_telemetry.py --mission ESA-Mission2 \\
+    python scripts/export_telemetry.py --mission ESA-Mission2 \
         --start 2003-01-01 --end 2003-02-01
 
     # Only export anomalous windows (predicted=1) plus N minutes of context
-    python scripts/export_telemetry.py --mission ESA-Mission2 \\
+    python scripts/export_telemetry.py --mission ESA-Mission2 \
         --anomalies_only --context_min 30
 
     # Specific channels only
-    python scripts/export_telemetry.py --mission ESA-Mission2 \\
+    python scripts/export_telemetry.py --mission ESA-Mission2 \
         --channels channel_1 channel_47 channel_100
 """
 
@@ -49,7 +49,7 @@ def parse_args():
     p.add_argument("--dataset",        default=None,
                    help="Path to dataset dir. Default: dataset/<mission>/")
     p.add_argument("--out",            default=None,
-                   help="Output CSV path. Default: results/<mission>/<mission>_telemetry.csv")
+                   help="Output Parquet path. Default: results/<mission>/telemetry/<mission>_telemetry.parquet")
     p.add_argument("--downsample",     type=int, default=1,
                    help="Keep every Nth row (default: 1 = no downsampling). "
                         "Use 2 for 1-minute resolution, 10 for 5-minute resolution.")
@@ -77,12 +77,13 @@ def main():
     dataset_dir = Path(args.dataset) if args.dataset else Path(f"dataset/{args.mission}")
 
     out_path = Path(args.out) if args.out else \
-               Path(f"results/{args.mission}/{args.mission}_telemetry.csv")
+               Path(f"results/{args.mission}/telemetry/{args.mission}_telemetry.parquet")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ── Load ──────────────────────────────────────────────────────────────
     print(f"Loading points CSV : {points_path}")
-    points = pd.read_csv(points_path, parse_dates=["timestamp"])
+    points = pd.read_csv(points_path)
+    points["timestamp"] = pd.to_datetime(points["timestamp"])
     points = points.loc[:, ~points.columns.str.match(r"^Unnamed")]
     points = points.sort_values("timestamp").reset_index(drop=True)
 
@@ -133,12 +134,12 @@ def main():
         print("No rows matched filters. Exiting.")
         return
 
-    points_sub   = points.loc[orig_idx].reset_index(drop=True)
-    test_sub     = test_arr[orig_idx.min():orig_idx.max()+1][::args.downsample,  :]
-    points_sub   = points_sub.iloc[::args.downsample].reset_index(drop=True)
+    points_sub = points.loc[orig_idx].reset_index(drop=True)
+    test_sub   = test_arr[orig_idx.min():orig_idx.max()+1][::args.downsample, :]
+    points_sub = points_sub.iloc[::args.downsample].reset_index(drop=True)
 
     # ── Build output DataFrame ────────────────────────────────────────────
-    print(f"\nBuilding output table: {len(points_sub):,} rows × "
+    print(f"\nBuilding output table: {len(points_sub):,} rows x "
           f"{len(selected_names) + 3} columns ...")
 
     channel_df = pd.DataFrame(
@@ -153,9 +154,9 @@ def main():
                     "is_anomaly_ground_truth"]].reset_index(drop=True),
     ], axis=1)
 
-    # ── Save ──────────────────────────────────────────────────────────────
+    # ── Save as Parquet (snappy compression) ──────────────────────────────
     print(f"Saving to {out_path} ...")
-    out_df.to_csv(out_path, index=False)
+    out_df.to_parquet(out_path, index=False, engine="pyarrow", compression="snappy")
 
     size_mb = out_path.stat().st_size / 1024 / 1024
     print(f"\nDone.")

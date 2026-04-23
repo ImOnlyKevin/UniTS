@@ -1,5 +1,5 @@
 from data_provider.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, PSMSegLoader, \
-    MSLSegLoader, SMAPSegLoader, SMDSegLoader, SWATSegLoader, UEAloader, GLUONTSDataset, ESASegLoader
+    MSLSegLoader, SMAPSegLoader, SMDSegLoader, SWATSegLoader, UEAloader, GLUONTSDataset, CustomNpySegLoader
 from data_provider.uea import collate_fn
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -17,8 +17,20 @@ data_dict = {
     'SMAP': SMAPSegLoader,
     'SMD': SMDSegLoader,
     'SWAT': SWATSegLoader,
-    'ESA-Mission1': ESASegLoader,
-    'ESA-Mission2': ESASegLoader,
+    'ESA-Mission1': CustomNpySegLoader,
+    'ESA-Mission2': CustomNpySegLoader,
+    'STPSat4-TCS': CustomNpySegLoader,
+    'STPSat4-HRR': CustomNpySegLoader,
+    'STPSat4-MRR': CustomNpySegLoader,
+    'STPSat4-PCE1': CustomNpySegLoader,
+    'STPSat4-PCE2': CustomNpySegLoader,
+    'STPSat4-ADCS': CustomNpySegLoader,
+    'STPSat7-EPS':  CustomNpySegLoader,
+    'STPSat7-ADCS': CustomNpySegLoader,
+    'STPSat7-TO':   CustomNpySegLoader,
+    'STPSat7-HRR':  CustomNpySegLoader,
+    'STPSat7-MRR':  CustomNpySegLoader,
+    'STPSat7-TC':   CustomNpySegLoader,
     'UEA': UEAloader,
     # datasets from gluonts package:
     "gluonts": GLUONTSDataset,

@@ -1,5 +1,3 @@
-# UniTS task config for ESA-ADB
-# enc_in / dec_in / c_out = number of channels from prepare_esa_data.py
 task_dataset:
   ESA-Mission1:
     task_name: anomaly_detection
@@ -14,7 +12,7 @@ task_dataset:
     embed: timeF
     enc_in: 76
     dec_in: 76
-    c_out:  76
+    c_out: 76
   ESA-Mission2:
     task_name: anomaly_detection
     dataset_name: ESA-Mission2
@@ -28,4 +26,46 @@ task_dataset:
     embed: timeF
     enc_in: 100
     dec_in: 100
-    c_out:  100
+    c_out: 100
+STPSat4-TCS:
+  data: anomaly_detection_ESA
+  root_path: ./dataset/STPSat4-TCS/
+  data_path: STPSat4-TCS
+  enc_in: 24
+  dec_in: 24
+  c_out: 24
+STPSat4-ADCS:
+  data: anomaly_detection_ESA
+  root_path: ./dataset/STPSat4-ADCS/
+  data_path: STPSat4-ADCS
+  enc_in: 623
+  dec_in: 623
+  c_out: 623
+STPSat4-HRR:
+  data: anomaly_detection_ESA
+  root_path: ./dataset/STPSat4-HRR/
+  data_path: STPSat4-HRR
+  enc_in: 69
+  dec_in: 69
+  c_out: 69
+STPSat4-MRR:
+  data: anomaly_detection_ESA
+  root_path: ./dataset/STPSat4-MRR/
+  data_path: STPSat4-MRR
+  enc_in: 69
+  dec_in: 69
+  c_out: 69
+STPSat4-PCE1:
+  data: anomaly_detection_ESA
+  root_path: ./dataset/STPSat4-PCE1/
+  data_path: STPSat4-PCE1
+  enc_in: 58
+  dec_in: 58
+  c_out: 58
+STPSat4-PCE2:
+  data: anomaly_detection_ESA
+  root_path: ./dataset/STPSat4-PCE2/
+  data_path: STPSat4-PCE2
+  enc_in: 58
+  dec_in: 58
+  c_out: 58

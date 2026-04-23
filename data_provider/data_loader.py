@@ -1034,7 +1034,8 @@ def context_based_split(X, is_pad, context_len: int):
     return Xnew[~pad_by_sample, :]
 
 
-class ESASegLoader(Dataset):
+class CustomNpySegLoader(Dataset):
+    # Generalized from ESASegLoader by Kevin Cagle to support any .npy-based anomaly detection dataset.
     """
     Anomaly detection dataset loader for ESA-ADB satellite telemetry.
 

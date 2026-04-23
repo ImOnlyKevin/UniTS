@@ -1,0 +1,85 @@
+task_dataset:
+  STPSat4-TCS:
+    task_name: anomaly_detection
+    dataset_name: STPSat4-TCS
+    dataset: STPSat4-TCS
+    data: STPSat4-TCS
+    root_path: ./dataset/STPSat4-TCS
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 24
+    dec_in: 24
+    c_out: 24
+  STPSat4-HRR:
+    task_name: anomaly_detection
+    dataset_name: STPSat4-HRR
+    dataset: STPSat4-HRR
+    data: STPSat4-HRR
+    root_path: ./dataset/STPSat4-HRR
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 69
+    dec_in: 69
+    c_out: 69
+  STPSat4-MRR:
+    task_name: anomaly_detection
+    dataset_name: STPSat4-MRR
+    dataset: STPSat4-MRR
+    data: STPSat4-MRR
+    root_path: ./dataset/STPSat4-MRR
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 69
+    dec_in: 69
+    c_out: 69
+  STPSat4-PCE1:
+    task_name: anomaly_detection
+    dataset_name: STPSat4-PCE1
+    dataset: STPSat4-PCE1
+    data: STPSat4-PCE1
+    root_path: ./dataset/STPSat4-PCE1
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 58
+    dec_in: 58
+    c_out: 58
+  STPSat4-PCE2:
+    task_name: anomaly_detection
+    dataset_name: STPSat4-PCE2
+    dataset: STPSat4-PCE2
+    data: STPSat4-PCE2
+    root_path: ./dataset/STPSat4-PCE2
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 58
+    dec_in: 58
+    c_out: 58
+  STPSat4-ADCS:
+    task_name: anomaly_detection
+    dataset_name: STPSat4-ADCS
+    dataset: STPSat4-ADCS
+    data: STPSat4-ADCS
+    root_path: ./dataset/STPSat4-ADCS
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 623
+    dec_in: 623
+    c_out: 623

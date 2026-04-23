@@ -1,0 +1,85 @@
+task_dataset:
+  STPSat7-TO:
+    task_name: anomaly_detection
+    dataset_name: STPSat7-TO
+    dataset: STPSat7-TO
+    data: STPSat7-TO
+    root_path: dataset/STPSat7-TO/
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 6
+    dec_in: 6
+    c_out: 6
+  STPSat7-HRR:
+    task_name: anomaly_detection
+    dataset_name: STPSat7-HRR
+    dataset: STPSat7-HRR
+    data: STPSat7-HRR
+    root_path: dataset/STPSat7-HRR/
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 87
+    dec_in: 87
+    c_out: 87
+  STPSat7-MRR:
+    task_name: anomaly_detection
+    dataset_name: STPSat7-MRR
+    dataset: STPSat7-MRR
+    data: STPSat7-MRR
+    root_path: dataset/STPSat7-MRR/
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 87
+    dec_in: 87
+    c_out: 87
+  STPSat7-TC:
+    task_name: anomaly_detection
+    dataset_name: STPSat7-TC
+    dataset: STPSat7-TC
+    data: STPSat7-TC
+    root_path: dataset/STPSat7-TC/
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 34
+    dec_in: 34
+    c_out: 34
+  STPSat7-EPS:
+    task_name: anomaly_detection
+    dataset_name: STPSat7-EPS
+    dataset: STPSat7-EPS
+    data: STPSat7-EPS
+    root_path: dataset/STPSat7-EPS/
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 242
+    dec_in: 242
+    c_out: 242
+  STPSat7-ADCS:
+    task_name: anomaly_detection
+    dataset_name: STPSat7-ADCS
+    dataset: STPSat7-ADCS
+    data: STPSat7-ADCS
+    root_path: dataset/STPSat7-ADCS/
+    seq_len: 96
+    label_len: 0
+    pred_len: 0
+    features: M
+    embed: timeF
+    enc_in: 618
+    dec_in: 618
+    c_out: 618

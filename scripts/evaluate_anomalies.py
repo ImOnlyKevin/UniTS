@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-evaluate_anomalies.py — Compare UniTS predicted anomalies vs ESA-ADB ground truth
+evaluate_anomalies.py — Compare UniTS predicted anomalies vs ground truth labels.
 
-Outputs a single consolidated PDF report plus supporting CSVs.
+Works with and without ground truth:
+  - With ground truth (ESA-ADB): full 5-page report with F1, confusion matrix, ROC/PR, timeline, FP/FN windows
+  - Without ground truth (STPSat4): 3-page report with score distribution, timeline, predicted windows
 
 Usage:
     python evaluate_anomalies.py --points ESA-Mission1_points.csv [--out results/] [--mission ESA-Mission1]
@@ -21,7 +23,7 @@ import matplotlib.dates as mdates
 from sklearn.metrics import (
     precision_score, recall_score, f1_score, accuracy_score,
     confusion_matrix, roc_curve, auc, precision_recall_curve,
-    average_precision_score, classification_report,
+    average_precision_score,
 )
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
@@ -51,7 +53,8 @@ plt.rcParams.update({
 
 def load_points(path: str) -> pd.DataFrame:
     print(f"Loading {path} ...")
-    df = pd.read_csv(path, parse_dates=["timestamp"])
+    df = pd.read_csv(path)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.loc[:, ~df.columns.str.match(r"^Unnamed")]
     required = {"timestamp", "anomaly_score", "is_anomaly_predicted", "is_anomaly_ground_truth"}
     missing = required - set(df.columns)
@@ -116,51 +119,73 @@ def plot_confusion_matrix(m: dict) -> bytes:
     return fig_to_bytes(fig)
 
 
-def plot_timeline(df: pd.DataFrame) -> bytes:
+def plot_timeline(df: pd.DataFrame, has_ground_truth: bool) -> bytes:
     df2 = df.set_index("timestamp")
     monthly_pred = df2["is_anomaly_predicted"].resample("ME").mean() * 100
-    monthly_gt   = df2["is_anomaly_ground_truth"].resample("ME").mean() * 100
-    fig, axes = plt.subplots(3, 1, figsize=(13, 8), sharex=True,
-                             gridspec_kw={"height_ratios": [2, 2, 1]})
-    axes[0].fill_between(monthly_gt.index, monthly_gt.values,
-                         color=C_GT, alpha=0.75, label="Ground Truth")
-    axes[0].set_ylabel("Anomaly Rate %")
-    axes[0].set_title("Ground Truth Anomaly Rate (monthly)", fontsize=11)
-    axes[0].legend(loc="upper right"); axes[0].grid(True, alpha=0.3)
-    axes[1].fill_between(monthly_pred.index, monthly_pred.values,
-                         color=C_PRED, alpha=0.75, label="Predicted")
-    axes[1].set_ylabel("Anomaly Rate %")
-    axes[1].set_title("Predicted Anomaly Rate (monthly)", fontsize=11)
-    axes[1].legend(loc="upper right"); axes[1].grid(True, alpha=0.3)
-    diff = monthly_pred - monthly_gt
-    axes[2].bar(diff.index, diff.values, width=20,
-                color=[C_FP if v > 0 else C_FN for v in diff.values], alpha=0.8)
-    axes[2].axhline(0, color=FG, linewidth=0.8)
-    axes[2].set_ylabel("Delta %")
-    axes[2].set_title("Predicted minus Ground Truth", fontsize=11)
-    axes[2].grid(True, alpha=0.3)
-    axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-    axes[2].xaxis.set_major_locator(mdates.MonthLocator(interval=2))
-    plt.xticks(rotation=45, ha="right")
+
+    if has_ground_truth:
+        monthly_gt = df2["is_anomaly_ground_truth"].resample("ME").mean() * 100
+        fig, axes = plt.subplots(3, 1, figsize=(13, 8), sharex=True,
+                                 gridspec_kw={"height_ratios": [2, 2, 1]})
+        axes[0].fill_between(monthly_gt.index, monthly_gt.values,
+                             color=C_GT, alpha=0.75, label="Ground Truth")
+        axes[0].set_ylabel("Anomaly Rate %")
+        axes[0].set_title("Ground Truth Anomaly Rate (monthly)", fontsize=11)
+        axes[0].legend(loc="upper right"); axes[0].grid(True, alpha=0.3)
+
+        axes[1].fill_between(monthly_pred.index, monthly_pred.values,
+                             color=C_PRED, alpha=0.75, label="Predicted")
+        axes[1].set_ylabel("Anomaly Rate %")
+        axes[1].set_title("Predicted Anomaly Rate (monthly)", fontsize=11)
+        axes[1].legend(loc="upper right"); axes[1].grid(True, alpha=0.3)
+
+        diff = monthly_pred - monthly_gt
+        axes[2].bar(diff.index, diff.values, width=20,
+                    color=[C_FP if v > 0 else C_FN for v in diff.values], alpha=0.8)
+        axes[2].axhline(0, color=FG, linewidth=0.8)
+        axes[2].set_ylabel("Delta %")
+        axes[2].set_title("Predicted minus Ground Truth", fontsize=11)
+        axes[2].grid(True, alpha=0.3)
+        axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+        axes[2].xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+        plt.xticks(rotation=45, ha="right")
+    else:
+        fig, ax = plt.subplots(figsize=(13, 4))
+        ax.fill_between(monthly_pred.index, monthly_pred.values,
+                        color=C_PRED, alpha=0.75, label="Predicted anomaly rate")
+        ax.set_ylabel("Predicted Anomaly Rate %")
+        ax.set_title("Predicted Anomaly Rate (monthly) — no ground truth available", fontsize=11)
+        ax.legend(loc="upper right"); ax.grid(True, alpha=0.3)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+        plt.xticks(rotation=45, ha="right")
+
     fig.tight_layout()
     return fig_to_bytes(fig)
 
 
-def plot_score_distribution(df: pd.DataFrame) -> bytes:
+def plot_score_distribution(df: pd.DataFrame, has_ground_truth: bool) -> bytes:
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     cap = np.percentile(df["anomaly_score"], 99.5)
+    bins = np.linspace(0, cap, 120)
+
     for ax, log_scale, title in zip(axes, [False, True],
                                     ["Score Distribution",
                                      "Score Distribution (log scale)"]):
-        gt0 = df.loc[df["is_anomaly_ground_truth"] == 0, "anomaly_score"].clip(upper=cap)
-        gt1 = df.loc[df["is_anomaly_ground_truth"] == 1, "anomaly_score"].clip(upper=cap)
-        bins = np.linspace(0, cap, 120)
-        ax.hist(gt0, bins=bins, color=C_TN, alpha=0.6,
-                label="True Normal", density=True, log=log_scale)
-        ax.hist(gt1, bins=bins, color=C_GT, alpha=0.6,
-                label="True Anomaly", density=True, log=log_scale)
+        if has_ground_truth:
+            gt0 = df.loc[df["is_anomaly_ground_truth"] == 0, "anomaly_score"].clip(upper=cap)
+            gt1 = df.loc[df["is_anomaly_ground_truth"] == 1, "anomaly_score"].clip(upper=cap)
+            ax.hist(gt0, bins=bins, color=C_TN, alpha=0.6,
+                    label="True Normal", density=True, log=log_scale)
+            ax.hist(gt1, bins=bins, color=C_GT, alpha=0.6,
+                    label="True Anomaly", density=True, log=log_scale)
+        else:
+            scores = df["anomaly_score"].clip(upper=cap)
+            ax.hist(scores, bins=bins, color=C_PRED, alpha=0.7,
+                    label="All points", density=True, log=log_scale)
         ax.set_xlabel("Anomaly Score"); ax.set_ylabel("Density")
         ax.set_title(title, fontsize=11); ax.legend(); ax.grid(True, alpha=0.3)
+
     fig.tight_layout()
     return fig_to_bytes(fig)
 
@@ -205,6 +230,19 @@ def extract_error_windows(df: pd.DataFrame, error_type: str) -> pd.DataFrame:
     return windows.sort_values("n_points", ascending=False)
 
 
+def extract_predicted_windows(df: pd.DataFrame) -> pd.DataFrame:
+    """Extract contiguous predicted anomaly windows (for no-ground-truth mode)."""
+    flagged = df[df["is_anomaly_predicted"] == 1].copy()
+    if flagged.empty:
+        return pd.DataFrame(columns=["start", "end", "n_points", "peak_score"])
+    flagged["group"] = (flagged.index.to_series().diff() != 1).cumsum()
+    windows = flagged.groupby("group").agg(
+        start=("timestamp", "first"), end=("timestamp", "last"),
+        n_points=("timestamp", "count"), peak_score=("anomaly_score", "max"),
+    ).reset_index(drop=True)
+    return windows.sort_values("peak_score", ascending=False)
+
+
 # ── PDF helpers ───────────────────────────────────────────────────────────────
 
 def _window_table(story, windows: pd.DataFrame, body_style):
@@ -238,7 +276,8 @@ def _window_table(story, windows: pd.DataFrame, body_style):
 # ── PDF builder ───────────────────────────────────────────────────────────────
 
 def build_pdf(df: pd.DataFrame, m: dict, fp_windows: pd.DataFrame,
-              fn_windows: pd.DataFrame, mission: str, out_path: str):
+              fn_windows: pd.DataFrame, mission: str, out_path: str,
+              has_ground_truth: bool):
 
     doc = SimpleDocTemplate(
         out_path, pagesize=landscape(letter),
@@ -262,15 +301,20 @@ def build_pdf(df: pd.DataFrame, m: dict, fp_windows: pd.DataFrame,
     W = 9.5 * inch
     story = []
 
-    # ── Derived values for dynamic text ──────────────────────────────────────
-    prec_pct   = f"{m['precision']*100:.1f}%"
-    recall_pct = f"{m['recall']*100:.1f}%"
-    f1_val     = f"{m['f1']:.3f}"
-    roc_val    = f"{m['roc_auc']:.3f}"
-    roc_quality = "near-random" if m['roc_auc'] < 0.6 else "moderate" if m['roc_auc'] < 0.75 else "good"
-    delta_fp   = m["fp"] / max(m["tn"] + m["fp"], 1) * 100
+    date_range = (f"{pd.to_datetime(df.timestamp).min().strftime('%Y-%m-%d')} to "
+                  f"{pd.to_datetime(df.timestamp).max().strftime('%Y-%m-%d')}")
 
-    # ── Page 1: summary + metrics table ──────────────────────────────────────
+    # ── Precompute derived values (ground-truth mode only) ────────────────────
+    if has_ground_truth:
+        prec_pct    = f"{m['precision']*100:.1f}%"
+        recall_pct  = f"{m['recall']*100:.1f}%"
+        f1_val      = f"{m['f1']:.3f}"
+        roc_val     = f"{m['roc_auc']:.3f}"
+        roc_quality = ("near-random" if m['roc_auc'] < 0.6
+                       else "moderate" if m['roc_auc'] < 0.75 else "good")
+        delta_fp    = m["fp"] / max(m["tn"] + m["fp"], 1) * 100
+
+    # ── Page 1: summary ───────────────────────────────────────────────────────
     story.append(Paragraph("UniTS Anomaly Detection Report", title_style))
     story.append(Paragraph(
         f"{mission}  |  Generated {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -279,16 +323,19 @@ def build_pdf(df: pd.DataFrame, m: dict, fp_windows: pd.DataFrame,
                             color=colors.HexColor("#cccccc"), spaceAfter=14))
 
     story.append(Paragraph("Dataset Summary", h1))
-    date_range = (f"{df.timestamp.min().strftime('%Y-%m-%d')} to "
-                  f"{df.timestamp.max().strftime('%Y-%m-%d')}")
+    pred_rate = float(df["is_anomaly_predicted"].mean() * 100)
     summary_rows = [
-        ["Total timesteps",           f"{len(df):,}"],
-        ["Date range",                date_range],
-        ["Ground truth anomaly rate", f"{m['gt_rate']:.2f}%  "
-                                      f"({df['is_anomaly_ground_truth'].sum():,} points)"],
-        ["Predicted anomaly rate",    f"{m['pred_rate']:.2f}%  "
-                                      f"({df['is_anomaly_predicted'].sum():,} points)"],
+        ["Total timesteps",        f"{len(df):,}"],
+        ["Date range",             date_range],
+        ["Predicted anomaly rate", f"{pred_rate:.2f}%  "
+                                   f"({df['is_anomaly_predicted'].sum():,} points)"],
     ]
+    if has_ground_truth:
+        gt_rate = float(df["is_anomaly_ground_truth"].mean() * 100)
+        summary_rows.insert(2, ["Ground truth anomaly rate",
+                                f"{gt_rate:.2f}%  "
+                                f"({df['is_anomaly_ground_truth'].sum():,} points)"])
+
     st = Table(summary_rows, colWidths=[2.2*inch, 4.5*inch])
     st.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (0, -1), colors.HexColor("#f0f4f8")),
@@ -303,125 +350,156 @@ def build_pdf(df: pd.DataFrame, m: dict, fp_windows: pd.DataFrame,
     story.append(st)
     story.append(Spacer(1, 14))
 
-    story.append(Paragraph("Detection Metrics", h1))
-    metrics_rows = [
-        ["Metric", "Value", "Interpretation"],
-        ["Precision",       f"{m['precision']:.4f}",
-         f"Of all predicted anomalies, {prec_pct} are real"],
-        ["Recall",          f"{m['recall']:.4f}",
-         f"{recall_pct} of all true anomaly points are detected"],
-        ["F1 Score",        f"{m['f1']:.4f}",
-         "Harmonic mean of precision and recall"],
-        ["Accuracy",        f"{m['accuracy']:.4f}",
-         "Overall correct classification rate"],
-        ["ROC-AUC",         f"{m['roc_auc']:.4f}",
-         f"Raw score discrimination ({roc_quality} — see note below)"],
-        ["Avg Precision",   f"{m['avg_precision']:.4f}",
-         "Area under the Precision-Recall curve"],
-        ["True Positives",  f"{m['tp']:,}",
-         "Anomaly points correctly flagged"],
-        ["False Positives", f"{m['fp']:,}",
-         f"Normal points incorrectly flagged ({delta_fp:.1f}% of all normal points)"],
-        ["False Negatives", f"{m['fn']:,}",
-         "Anomaly points missed"],
-        ["True Negatives",  f"{m['tn']:,}",
-         "Normal points correctly cleared"],
-    ]
-    mt = Table(metrics_rows, colWidths=[1.8*inch, 1.1*inch, 4.8*inch])
-    mt.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
-        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME",      (0, 1), (0, -1), "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 9),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
-        ("GRID",          (0, 0), (-1, -1), 0.3, colors.HexColor("#cccccc")),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-        ("BACKGROUND",    (0, 5), (-1, 5), colors.HexColor("#fff0f0")),
-    ]))
-    story.append(mt)
-    story.append(Spacer(1, 8))
-    story.append(Paragraph(
-        f"<b>Note on F1 vs ROC-AUC:</b> The F1 of {f1_val} reflects binary detection quality "
-        f"under the UniTS point-adjust (PA) evaluation procedure, where detecting any point within "
-        f"an anomaly segment credits the full segment. The ROC-AUC of {roc_val} reflects the raw "
-        f"anomaly_score column used as a continuous ranking signal — it is {roc_quality}, meaning "
-        f"scores should not be used to prioritize or rank alerts. The binary flag is the actionable output.",
-        note))
-
-    story.append(PageBreak())
-
-    # ── Page 2: confusion matrix + score distribution ─────────────────────────
-    story.append(Paragraph("Confusion Matrix & Score Distribution", h1))
-    cm_img   = RLImage(io.BytesIO(plot_confusion_matrix(m)),    width=3.8*inch, height=3.0*inch)
-    dist_img = RLImage(io.BytesIO(plot_score_distribution(df)), width=5.5*inch, height=2.7*inch)
-    row = Table([[cm_img, dist_img]], colWidths=[4.1*inch, 5.4*inch])
-    row.setStyle(TableStyle([
-        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    story.append(row)
-    story.append(Spacer(1, 8))
-    story.append(Paragraph(
-        "Score distributions clipped at the 99.5th percentile. Overlap between True Normal and "
-        "True Anomaly distributions indicates the model relies on a fixed threshold rather than "
-        f"separating the score distributions — consistent with the ROC-AUC of {roc_val}.",
-        note))
-
-    story.append(PageBreak())
-
-    # ── Page 3: ROC / PR ──────────────────────────────────────────────────────
-    story.append(Paragraph("ROC & Precision-Recall Curves", h1))
-    story.append(RLImage(io.BytesIO(plot_roc_pr(m)), width=W, height=W*0.42))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(
-        f"Both curves are computed on the raw anomaly_score (continuous). "
-        f"ROC-AUC = {roc_val} ({roc_quality}). "
-        f"The binary is_anomaly_predicted flag (F1 = {f1_val}) is the operationally useful output.",
-        note))
-
-    story.append(PageBreak())
-
-    # ── Page 4: timeline ──────────────────────────────────────────────────────
-    story.append(Paragraph("Anomaly Timeline (monthly)", h1))
-    story.append(RLImage(io.BytesIO(plot_timeline(df)), width=W, height=W*0.62))
-    story.append(Spacer(1, 6))
-
-    # Determine direction of delta for the note
-    diff_vals = (df.set_index("timestamp")["is_anomaly_predicted"].resample("ME").mean() -
-                 df.set_index("timestamp")["is_anomaly_ground_truth"].resample("ME").mean())
-    pct_over  = (diff_vals > 0).sum()
-    pct_under = (diff_vals < 0).sum()
-    if pct_over > pct_under:
-        delta_note = (f"Most months show predicted rate slightly above ground truth, "
-                      f"consistent with the {m['fp']:,} false positives in the test period.")
-    elif pct_under > pct_over:
-        delta_note = (f"Most months show predicted rate slightly below ground truth, "
-                      f"consistent with the {m['fn']:,} false negatives in the test period.")
+    if has_ground_truth:
+        story.append(Paragraph("Detection Metrics", h1))
+        metrics_rows = [
+            ["Metric", "Value", "Interpretation"],
+            ["Precision",       f"{m['precision']:.4f}",
+             f"Of all predicted anomalies, {prec_pct} are real"],
+            ["Recall",          f"{m['recall']:.4f}",
+             f"{recall_pct} of all true anomaly points are detected"],
+            ["F1 Score",        f"{m['f1']:.4f}",
+             "Harmonic mean of precision and recall"],
+            ["Accuracy",        f"{m['accuracy']:.4f}",
+             "Overall correct classification rate"],
+            ["ROC-AUC",         f"{m['roc_auc']:.4f}",
+             f"Raw score discrimination ({roc_quality} — see note below)"],
+            ["Avg Precision",   f"{m['avg_precision']:.4f}",
+             "Area under the Precision-Recall curve"],
+            ["True Positives",  f"{m['tp']:,}",
+             "Anomaly points correctly flagged"],
+            ["False Positives", f"{m['fp']:,}",
+             f"Normal points incorrectly flagged ({delta_fp:.1f}% of all normal points)"],
+            ["False Negatives", f"{m['fn']:,}",
+             "Anomaly points missed"],
+            ["True Negatives",  f"{m['tn']:,}",
+             "Normal points correctly cleared"],
+        ]
+        mt = Table(metrics_rows, colWidths=[1.8*inch, 1.1*inch, 4.8*inch])
+        mt.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME",      (0, 1), (0, -1), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 9),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
+            ("GRID",          (0, 0), (-1, -1), 0.3, colors.HexColor("#cccccc")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("BACKGROUND",    (0, 5), (-1, 5), colors.HexColor("#fff0f0")),
+        ]))
+        story.append(mt)
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(
+            f"<b>Note on F1 vs ROC-AUC:</b> The F1 of {f1_val} reflects binary detection "
+            f"quality under the UniTS point-adjust (PA) evaluation procedure, where detecting "
+            f"any point within an anomaly segment credits the full segment. The ROC-AUC of "
+            f"{roc_val} reflects the raw anomaly_score used as a continuous ranking signal — "
+            f"it is {roc_quality}, meaning scores should not be used to prioritize or rank "
+            f"alerts. The binary flag is the actionable output.",
+            note))
     else:
-        delta_note = f"Predicted and ground truth rates are closely matched across the test period."
-
-    story.append(Paragraph(
-        f"{delta_note} Predicted and ground truth anomaly rates track closely "
-        f"through all major anomaly events.",
-        note))
+        story.append(Paragraph("No Ground Truth Available", h1))
+        story.append(Paragraph(
+            "This dataset has no labeled anomalies. Metrics such as F1, precision, recall, "
+            "and ROC-AUC cannot be computed. The report shows the predicted anomaly score "
+            "distribution and timeline only. Predicted anomaly windows are listed on the "
+            "final page for operator review.",
+            body))
 
     story.append(PageBreak())
 
-    # ── Page 5: error windows ─────────────────────────────────────────────────
-    story.append(Paragraph("Top False Positive Windows (pred=1, truth=0)", h1))
-    story.append(Paragraph(
-        f"Total FP windows: {len(fp_windows):,}  —  showing top 20 by duration.", note))
-    _window_table(story, fp_windows.head(20), body)
+    # ── Page 2: score distribution + timeline ─────────────────────────────────
+    story.append(Paragraph("Score Distribution", h1))
+    dist_img = RLImage(io.BytesIO(plot_score_distribution(df, has_ground_truth)),
+                       width=W, height=W * 0.35)
+    story.append(dist_img)
+    story.append(Spacer(1, 8))
+    if has_ground_truth:
+        story.append(Paragraph(
+            "Score distributions clipped at the 99.5th percentile. Overlap between True Normal "
+            "and True Anomaly distributions indicates the model relies on a fixed threshold "
+            f"rather than separating score distributions — consistent with ROC-AUC of {roc_val}.",
+            note))
+    else:
+        story.append(Paragraph(
+            "Score distribution clipped at the 99.5th percentile. The threshold used to "
+            "produce the binary is_anomaly_predicted flag was set automatically by UniTS "
+            "based on the configured anomaly_ratio.",
+            note))
 
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("Top False Negative Windows (pred=0, truth=1)", h1))
-    story.append(Paragraph(
-        f"Total FN windows: {len(fn_windows):,}  —  showing top 20 by duration.", note))
-    _window_table(story, fn_windows.head(20), body)
+    story.append(Paragraph("Anomaly Timeline (monthly)", h1))
+    story.append(RLImage(io.BytesIO(plot_timeline(df, has_ground_truth)),
+                         width=W, height=W * (0.62 if has_ground_truth else 0.38)))
+    story.append(Spacer(1, 6))
+
+    if has_ground_truth:
+        diff_vals = (df.set_index("timestamp")["is_anomaly_predicted"].resample("ME").mean() -
+                     df.set_index("timestamp")["is_anomaly_ground_truth"].resample("ME").mean())
+        pct_over  = (diff_vals > 0).sum()
+        pct_under = (diff_vals < 0).sum()
+        if pct_over > pct_under:
+            delta_note = (f"Most months show predicted rate slightly above ground truth, "
+                          f"consistent with the {m['fp']:,} false positives in the test period.")
+        elif pct_under > pct_over:
+            delta_note = (f"Most months show predicted rate slightly below ground truth, "
+                          f"consistent with the {m['fn']:,} false negatives in the test period.")
+        else:
+            delta_note = "Predicted and ground truth rates are closely matched across the test period."
+        story.append(Paragraph(
+            f"{delta_note} Predicted and ground truth anomaly rates track closely "
+            f"through all major anomaly events.", note))
+
+        story.append(PageBreak())
+
+        # ── Page 3: confusion matrix ──────────────────────────────────────────
+        story.append(Paragraph("Confusion Matrix & Score Distribution", h1))
+        cm_img    = RLImage(io.BytesIO(plot_confusion_matrix(m)),
+                            width=3.8*inch, height=3.0*inch)
+        dist_img2 = RLImage(io.BytesIO(plot_score_distribution(df, has_ground_truth)),
+                            width=5.5*inch, height=2.7*inch)
+        row = Table([[cm_img, dist_img2]], colWidths=[4.1*inch, 5.4*inch])
+        row.setStyle(TableStyle([
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ]))
+        story.append(row)
+        story.append(PageBreak())
+
+        # ── Page 4: ROC / PR ──────────────────────────────────────────────────
+        story.append(Paragraph("ROC & Precision-Recall Curves", h1))
+        story.append(RLImage(io.BytesIO(plot_roc_pr(m)), width=W, height=W * 0.42))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            f"Both curves are computed on the raw anomaly_score (continuous). "
+            f"ROC-AUC = {roc_val} ({roc_quality}). "
+            f"The binary is_anomaly_predicted flag (F1 = {f1_val}) is the operationally useful output.",
+            note))
+        story.append(PageBreak())
+
+        # ── Page 5: FP / FN windows ───────────────────────────────────────────
+        story.append(Paragraph("Top False Positive Windows (pred=1, truth=0)", h1))
+        story.append(Paragraph(
+            f"Total FP windows: {len(fp_windows):,}  —  showing top 20 by duration.", note))
+        _window_table(story, fp_windows.head(20), body)
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Top False Negative Windows (pred=0, truth=1)", h1))
+        story.append(Paragraph(
+            f"Total FN windows: {len(fn_windows):,}  —  showing top 20 by duration.", note))
+        _window_table(story, fn_windows.head(20), body)
+
+    else:
+        # ── Page 3: predicted anomaly windows (no ground truth) ───────────────
+        story.append(PageBreak())
+        pred_windows = extract_predicted_windows(df)
+        story.append(Paragraph("Top Predicted Anomaly Windows", h1))
+        story.append(Paragraph(
+            f"Total predicted anomaly windows: {len(pred_windows):,}  —  "
+            f"showing top 50 by peak score. No ground truth available for validation.",
+            note))
+        _window_table(story, pred_windows.head(50), body)
 
     doc.build(story)
     print(f"  Saved: {out_path}")
@@ -433,33 +511,39 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--points",  required=True)
     parser.add_argument("--out",     default="evaluation_results")
-    parser.add_argument("--mission", default="ESA-Mission",
+    parser.add_argument("--mission", default="Mission",
                         help="Mission name used in filenames and report title")
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
     df = load_points(args.points)
 
-    print("\nComputing metrics ...")
-    m = compute_metrics(df)
-    print(f"  F1={m['f1']:.4f}  Precision={m['precision']:.4f}  "
-          f"Recall={m['recall']:.4f}  ROC-AUC={m['roc_auc']:.4f}")
-    print(f"  TP={m['tp']:,}  FP={m['fp']:,}  FN={m['fn']:,}  TN={m['tn']:,}")
+    has_ground_truth = df["is_anomaly_ground_truth"].sum() > 0
 
-    print("\nExtracting error windows ...")
-    fp_windows = extract_error_windows(df, "fp")
-    fn_windows = extract_error_windows(df, "fn")
-    for label, win, path in [
-        ("FP", fp_windows, os.path.join(args.out, f"{args.mission}_false_positives.csv")),
-        ("FN", fn_windows, os.path.join(args.out, f"{args.mission}_false_negatives.csv")),
-    ]:
-        win.to_csv(path, index=False)
-        print(f"  Saved {label} CSV: {path}  ({len(win):,} windows)")
+    if has_ground_truth:
+        print("\nGround truth labels detected — computing supervised metrics ...")
+        m = compute_metrics(df)
+        print(f"  F1={m['f1']:.4f}  Precision={m['precision']:.4f}  "
+              f"Recall={m['recall']:.4f}  ROC-AUC={m['roc_auc']:.4f}")
+        print(f"  TP={m['tp']:,}  FP={m['fp']:,}  FN={m['fn']:,}  TN={m['tn']:,}")
+        print("\nExtracting error windows ...")
+        fp_windows = extract_error_windows(df, "fp")
+        fn_windows = extract_error_windows(df, "fn")
+        for label, win, wpath in [
+            ("FP", fp_windows, os.path.join(args.out, f"{args.mission}_false_positives.csv")),
+            ("FN", fn_windows, os.path.join(args.out, f"{args.mission}_false_negatives.csv")),
+        ]:
+            win.to_csv(wpath, index=False)
+            print(f"  Saved {label} CSV: {wpath}  ({len(win):,} windows)")
+    else:
+        print("\nNo ground truth labels — unsupervised mode (score distribution + timeline only).")
+        m = None
+        fp_windows = pd.DataFrame()
+        fn_windows = pd.DataFrame()
 
     print("\nBuilding PDF report ...")
     pdf_path = os.path.join(args.out, f"{args.mission}_evaluation_report.pdf")
-    build_pdf(df, m, fp_windows, fn_windows, args.mission, pdf_path)
-
+    build_pdf(df, m, fp_windows, fn_windows, args.mission, pdf_path, has_ground_truth)
     print(f"\nDone.  PDF report: {pdf_path}")
 
 

@@ -2,7 +2,7 @@
 #SBATCH --job-name=esa-prep
 #SBATCH --output=logs/esa_prep_%j.out
 #SBATCH --error=logs/esa_prep_%j.err
-#SBATCH --partition=xeon-p8
+#SBATCH --partition=xeon-g6430-h100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16

@@ -272,13 +272,6 @@ PYEOF
         --out     "results/${MISSION}/telemetry/${MISSION}_telemetry.parquet"
     echo "Telemetry: results/${MISSION}/telemetry/${MISSION}_telemetry.parquet"
 
-    # Attribution parquet
-    python scripts/attribute_anomalies.py \
-        --mission "$MISSION" \
-        --points  "$POINTS" \
-        --out     "results/${MISSION}/telemetry/${MISSION}_attribution.parquet"
-    echo "Attribution: results/${MISSION}/telemetry/${MISSION}_attribution.parquet"
-
     echo "=== $MISSION complete: $(date) ==="
 done
 
@@ -298,10 +291,4 @@ echo "Telemetry parquets:"
 for MISSION in $MISSIONS; do
     PQ="results/${MISSION}/telemetry/${MISSION}_telemetry.parquet"
     [ -f "$PQ" ] && echo "  OK  $PQ" || echo "  --  $PQ (not generated)"
-done
-echo ""
-echo "Attribution parquets:"
-for MISSION in $MISSIONS; do
-    AT="results/${MISSION}/telemetry/${MISSION}_attribution.parquet"
-    [ -f "$AT" ] && echo "  OK  $AT" || echo "  --  $AT (not generated)"
 done

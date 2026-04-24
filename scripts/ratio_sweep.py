@@ -75,7 +75,10 @@ def apply_ratio_threshold(scores: np.ndarray, baseline_threshold: float,
     Anchors to the original UniTS threshold (training-derived) at baseline_ratio,
     then scales up/down for other ratios.
     """
-    target_n   = int(len(scores) * (ratio / baseline_ratio) * (baseline_flagged / len(scores)))
+    if baseline_flagged <= 0:
+        target_n = int(round(len(scores) * (ratio / 100.0)))
+    else:
+        target_n = int(len(scores) * (ratio / baseline_ratio) * (baseline_flagged / len(scores)))
     target_n   = max(1, min(target_n, len(scores)))
     threshold  = np.sort(scores)[::-1][target_n - 1]
     preds      = (scores >= threshold).astype(int)
@@ -349,7 +352,10 @@ def main():
     # (which reflects the training-derived threshold, not test percentile)
     baseline_ratio     = 1.0
     baseline_flagged   = int(df["is_anomaly_predicted"].sum())
-    baseline_threshold = float(df.loc[df["is_anomaly_predicted"] == 1, "anomaly_score"].min())
+    if baseline_flagged > 0:
+        baseline_threshold = float(df.loc[df["is_anomaly_predicted"] == 1, "anomaly_score"].min())
+    else:
+        baseline_threshold = float(df["anomaly_score"].max())
     baseline_rate      = baseline_flagged / len(df) * 100
     print(f"  Baseline (original UniTS): flagged={baseline_flagged:,} "
           f"({baseline_rate:.3f}%)  threshold={baseline_threshold:.6f}")

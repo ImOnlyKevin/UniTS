@@ -8,7 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=24:00:00
+#SBATCH --time=96:00:00
 
 # Paper-oriented anomaly-detection study:
 #   - prepares requested missions
@@ -40,7 +40,13 @@
 
 set -euo pipefail
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+    ROOT_DIR="$SLURM_SUBMIT_DIR"
+elif [[ -n "${UNITS_ROOT_DIR:-}" ]]; then
+    ROOT_DIR="$UNITS_ROOT_DIR"
+else
+    ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+fi
 cd "$ROOT_DIR"
 mkdir -p logs
 

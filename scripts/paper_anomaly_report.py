@@ -187,6 +187,30 @@ def has_column(df: pd.DataFrame, column: str) -> bool:
     return column in normalize_legacy_columns(df).columns
 
 
+def sort_by_available_columns(
+    df: pd.DataFrame,
+    sort_specs: list[tuple[str, bool]],
+    fallback_specs: list[tuple[str, bool]] | None = None,
+) -> pd.DataFrame:
+    df = normalize_legacy_columns(df)
+    fallback_specs = fallback_specs or []
+
+    def _usable(column: str) -> bool:
+        return column in df.columns and not df[column].isna().all()
+
+    active_specs = [spec for spec in sort_specs if _usable(spec[0])]
+    if not active_specs:
+        active_specs = [spec for spec in fallback_specs if _usable(spec[0])]
+    if not active_specs:
+        return df
+
+    return df.sort_values(
+        [column for column, _ in active_specs],
+        ascending=[ascending for _, ascending in active_specs],
+        na_position="last",
+    )
+
+
 def contiguous_windows(mask: np.ndarray, timestamps: pd.Series, scores: np.ndarray) -> pd.DataFrame:
     mask = np.asarray(mask).astype(int)
     changes = np.diff(np.concatenate([[0], mask, [0]]))
@@ -619,18 +643,30 @@ def compute_top_channels_for_reference_runs(
 
 
 def choose_reference_runs(run_summary_df: pd.DataFrame) -> pd.DataFrame:
+    run_summary_df = normalize_legacy_columns(run_summary_df)
     reference_rows = []
     for mission, mission_df in run_summary_df.groupby("mission", sort=False):
         mission_df = mission_df.copy()
         if bool(mission_df["has_ground_truth"].iloc[0]):
-            mission_df = mission_df.sort_values(
-                ["selected_f1", "selected_recall", "selected_precision", "selected_flagged_rate_pct"],
-                ascending=[False, False, False, True],
+            mission_df = sort_by_available_columns(
+                mission_df,
+                [
+                    ("selected_f1", False),
+                    ("selected_recall", False),
+                    ("selected_precision", False),
+                    ("selected_flagged_rate_pct", True),
+                ],
+                fallback_specs=[("selection_value", False), ("selected_flagged_rate_pct", True)],
             )
         else:
-            mission_df = mission_df.sort_values(
-                ["selected_heuristic_score", "selected_score_separation", "selected_flagged_rate_pct"],
-                ascending=[False, False, True],
+            mission_df = sort_by_available_columns(
+                mission_df,
+                [
+                    ("selected_heuristic_score", False),
+                    ("selected_score_separation", False),
+                    ("selected_flagged_rate_pct", True),
+                ],
+                fallback_specs=[("selection_value", False), ("selected_flagged_rate_pct", True)],
             )
         reference_rows.append(mission_df.iloc[0])
     return pd.DataFrame(reference_rows).reset_index(drop=True)
@@ -864,8 +900,15 @@ def make_key_findings(reference_df: pd.DataFrame) -> list[str]:
     reference_df = normalize_legacy_columns(reference_df)
     findings = []
     labelled = reference_df[reference_df["has_ground_truth"].astype(bool)]
-    if not labelled.empty:
-        best = labelled.sort_values("selected_f1", ascending=False).iloc[0]
+    has_labelled_f1 = has_column(labelled, "selected_f1")
+    if has_labelled_f1:
+        labelled = labelled[labelled["selected_f1"].notna()]
+    if not labelled.empty and has_labelled_f1:
+        best = sort_by_available_columns(
+            labelled,
+            [("selected_f1", False), ("selected_recall", False), ("selected_precision", False)],
+            fallback_specs=[("selection_value", False)],
+        ).iloc[0]
         findings.append(
             f"Best labeled configuration: {best['mission']} reached F1 {best['selected_f1']:.3f} "
             f"at training fraction {best['subsample_pct']:.2f}, prompt tuning {int(best['prompt_tune_epoch'])} epochs, "
@@ -1178,19 +1221,27 @@ def main() -> None:
     )
     top_channels_df = compute_top_channels_for_reference_runs(reference_df, top_n=args.top_channels)
 
+    labelled_runs = run_summary_df[run_summary_df["has_ground_truth"].astype(bool)].copy()
+    labelled_runs = sort_by_available_columns(
+        labelled_runs,
+        [("selected_f1", False), ("selected_recall", False), ("selected_precision", False)],
+        fallback_specs=[("selection_value", False), ("selected_flagged_rate_pct", True)],
+    )
     best_labelled_df = (
-        run_summary_df[run_summary_df["has_ground_truth"].astype(bool)]
-        .sort_values(["selected_f1", "selected_recall", "selected_precision"], ascending=[False, False, False])
-        .groupby("mission", sort=False)
-        .head(3)
-        .reset_index(drop=True)
+        labelled_runs.groupby("mission", sort=False).head(3).reset_index(drop=True)
+        if not labelled_runs.empty
+        else labelled_runs
+    )
+    unlabelled_runs = run_summary_df[~run_summary_df["has_ground_truth"].astype(bool)].copy()
+    unlabelled_runs = sort_by_available_columns(
+        unlabelled_runs,
+        [("selected_heuristic_score", False), ("selected_score_separation", False)],
+        fallback_specs=[("selection_value", False), ("selected_flagged_rate_pct", True)],
     )
     best_unlabelled_df = (
-        run_summary_df[~run_summary_df["has_ground_truth"].astype(bool)]
-        .sort_values(["selected_heuristic_score", "selected_score_separation"], ascending=[False, False])
-        .groupby("mission", sort=False)
-        .head(3)
-        .reset_index(drop=True)
+        unlabelled_runs.groupby("mission", sort=False).head(3).reset_index(drop=True)
+        if not unlabelled_runs.empty
+        else unlabelled_runs
     )
 
     run_summary_path = dirs["tables"] / "run_summary.csv"
@@ -1253,7 +1304,11 @@ def main() -> None:
     labelled_heatmap_df = run_summary_df[
         run_summary_df["has_ground_truth"].astype(bool) & (run_summary_df["mode"] == "prompt_tuning")
     ].copy()
-    if not labelled_heatmap_df.empty:
+    if (
+        not labelled_heatmap_df.empty
+        and has_column(labelled_heatmap_df, "selected_f1")
+        and labelled_heatmap_df["selected_f1"].notna().any()
+    ):
         fig_path = dirs["figures"] / "figure_05_labelled_prompt_heatmaps.png"
         plot_heatmaps(
             labelled_heatmap_df,

@@ -92,6 +92,18 @@ plt.rcParams.update(
 )
 
 
+LEGACY_COLUMN_ALIASES = {
+    "selected.f1": "selected_f1",
+    "selected.precision": "selected_precision",
+    "selected.recall": "selected_recall",
+    "selected.flagged_rate_pct": "selected_flagged_rate_pct",
+    "selected.pred_windows": "selected_pred_windows",
+    "selected.score_separation": "selected_score_separation",
+    "selected.heuristic_score": "selected_heuristic_score",
+    "selected.gt_rate_pct": "selected_gt_rate_pct",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a paper-style anomaly report bundle from a study manifest."
@@ -160,6 +172,19 @@ def load_points(path: Path) -> pd.DataFrame:
     if missing:
         raise ValueError(f"{path} missing required point columns: {sorted(missing)}")
     return df
+
+
+def normalize_legacy_columns(df: pd.DataFrame) -> pd.DataFrame:
+    rename_map = {
+        old: new for old, new in LEGACY_COLUMN_ALIASES.items() if old in df.columns and new not in df.columns
+    }
+    if not rename_map:
+        return df
+    return df.rename(columns=rename_map)
+
+
+def has_column(df: pd.DataFrame, column: str) -> bool:
+    return column in normalize_legacy_columns(df).columns
 
 
 def contiguous_windows(mask: np.ndarray, timestamps: pd.Series, scores: np.ndarray) -> pd.DataFrame:
@@ -630,6 +655,7 @@ def save_figure(fig: plt.Figure, path: Path) -> None:
 
 
 def plot_reference_overview(reference_df: pd.DataFrame, out_path: Path) -> None:
+    reference_df = normalize_legacy_columns(reference_df)
     order = reference_df.sort_values("mission")["mission"].tolist()
     plot_df = reference_df.set_index("mission").loc[order]
     x = np.arange(len(order))
@@ -672,6 +698,7 @@ def plot_heatmaps(
     title: str,
     out_path: Path,
 ) -> None:
+    run_summary_df = normalize_legacy_columns(run_summary_df)
     missions = run_summary_df["mission"].drop_duplicates().tolist()
     if not missions:
         return
@@ -718,6 +745,8 @@ def plot_ratio_sensitivity(
     reference_df: pd.DataFrame,
     out_path: Path,
 ) -> None:
+    ratio_metrics_df = normalize_legacy_columns(ratio_metrics_df)
+    reference_df = normalize_legacy_columns(reference_df)
     ref_ids = set(reference_df["run_id"])
     subset = ratio_metrics_df[ratio_metrics_df["run_id"].isin(ref_ids)].copy()
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.3))
@@ -757,6 +786,7 @@ def plot_ratio_sensitivity(
 
 
 def plot_score_distributions(score_sample_df: pd.DataFrame, reference_df: pd.DataFrame, out_path: Path) -> None:
+    reference_df = normalize_legacy_columns(reference_df)
     ref_ids = set(reference_df["run_id"])
     subset = score_sample_df[score_sample_df["run_id"].isin(ref_ids)].copy()
     if subset.empty:
@@ -783,6 +813,7 @@ def plot_progress_heatmap(
     progress_bins: int,
     out_path: Path,
 ) -> None:
+    reference_df = normalize_legacy_columns(reference_df)
     ref_ids = set(reference_df["run_id"])
     subset = progression_df[progression_df["run_id"].isin(ref_ids)].copy()
     if subset.empty:
@@ -809,6 +840,7 @@ def plot_progress_heatmap(
 
 
 def plot_top_channels(top_channels_df: pd.DataFrame, out_path: Path) -> None:
+    top_channels_df = normalize_legacy_columns(top_channels_df)
     if top_channels_df.empty:
         return
 
@@ -829,6 +861,7 @@ def plot_top_channels(top_channels_df: pd.DataFrame, out_path: Path) -> None:
 
 
 def make_key_findings(reference_df: pd.DataFrame) -> list[str]:
+    reference_df = normalize_legacy_columns(reference_df)
     findings = []
     labelled = reference_df[reference_df["has_ground_truth"].astype(bool)]
     if not labelled.empty:
@@ -877,6 +910,7 @@ def write_readme(
     reference_df: pd.DataFrame,
     findings: list[str],
 ) -> None:
+    reference_df = normalize_legacy_columns(reference_df)
     lines = [f"# {title}", "", "## Key Findings", ""]
     for finding in findings:
         lines.append(f"- {finding}")
@@ -892,7 +926,7 @@ def write_readme(
         "selected_flagged_rate_pct",
         "selected_pred_windows",
     ]
-    if "selected_f1" in ref_table.columns:
+    if has_column(ref_table, "selected_f1"):
         display_cols.append("selected_f1")
     ref_table = ref_table[display_cols]
     lines.append(dataframe_to_markdown(ref_table))
@@ -910,6 +944,7 @@ def write_readme(
 
 
 def _make_table(df: pd.DataFrame, max_rows: int = 12) -> Table:
+    df = normalize_legacy_columns(df)
     clipped = df.head(max_rows).copy()
     clipped = clipped.fillna("")
     clipped.columns = [str(col) for col in clipped.columns]
@@ -943,6 +978,10 @@ def build_pdf(
     best_unlabelled_df: pd.DataFrame,
     findings: list[str],
 ) -> None:
+    mission_profiles_df = normalize_legacy_columns(mission_profiles_df)
+    reference_df = normalize_legacy_columns(reference_df)
+    best_labelled_df = normalize_legacy_columns(best_labelled_df)
+    best_unlabelled_df = normalize_legacy_columns(best_unlabelled_df)
     pdf_path = study_dir / "report" / "paper_report.pdf"
     doc = SimpleDocTemplate(
         str(pdf_path),
@@ -1014,7 +1053,7 @@ def build_pdf(
         "selected_flagged_rate_pct",
         "selected_pred_windows",
     ]
-    if "selected_f1" in reference_df.columns:
+    if has_column(reference_df, "selected_f1"):
         ref_cols.append("selected_f1")
     ref_table = reference_df[ref_cols].copy()
     for col in ["subsample_pct", "selected_ratio", "selected_flagged_rate_pct"]:
@@ -1126,6 +1165,11 @@ def main() -> None:
     progression_df = pd.concat(progress_tables, ignore_index=True)
     score_sample_df = pd.concat(score_samples, ignore_index=True)
     reference_df = choose_reference_runs(run_summary_df)
+    run_summary_df = normalize_legacy_columns(run_summary_df)
+    ratio_metrics_df = normalize_legacy_columns(ratio_metrics_df)
+    progression_df = normalize_legacy_columns(progression_df)
+    score_sample_df = normalize_legacy_columns(score_sample_df)
+    reference_df = normalize_legacy_columns(reference_df)
     mission_profiles_df = (
         run_summary_df.sort_values(["mission", "selection_value"], ascending=[True, False])
         .drop_duplicates("mission")

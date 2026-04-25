@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 1365, in <module>
+    main()
+  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 1182, in main
+    run_summary_df[run_summary_df["has_ground_truth"].astype(bool)]
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/core/frame.py", line 7194, in sort_values
+    keys = [self._get_label_or_level_values(x, axis=axis) for x in by]
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/core/frame.py", line 7194, in <listcomp>
+    keys = [self._get_label_or_level_values(x, axis=axis) for x in by]
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/core/generic.py", line 1914, in _get_label_or_level_values
+    raise KeyError(key)
+KeyError: 'selected_f1'

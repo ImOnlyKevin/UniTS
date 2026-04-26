@@ -163,6 +163,10 @@ def load_manifest(path: Path) -> pd.DataFrame:
 
 
 def load_points(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"Points CSV not found: {path}")
+    if not path.is_file():
+        raise IsADirectoryError(f"Points CSV path is not a file: {path}")
     df = pd.read_csv(path)
     df = df.loc[:, ~df.columns.str.match(r"^Unnamed")]
     df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -209,6 +213,18 @@ def sort_by_available_columns(
         ascending=[ascending for _, ascending in active_specs],
         na_position="last",
     )
+
+
+def coerce_manifest_path(value: object, base_dir: Path | None = None) -> Path | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    path = Path(text)
+    if base_dir is not None and not path.is_absolute():
+        path = (base_dir / path).resolve()
+    return path
 
 
 def contiguous_windows(mask: np.ndarray, timestamps: pd.Series, scores: np.ndarray) -> pd.DataFrame:
@@ -1176,20 +1192,29 @@ def main() -> None:
     args = parse_args()
     study_dir = Path(args.study_dir)
     dirs = ensure_output_dirs(study_dir)
-    manifest_df = load_manifest(Path(args.manifest))
+    manifest_path = Path(args.manifest).resolve()
+    manifest_df = load_manifest(manifest_path)
+    manifest_dir = manifest_path.parent
 
     rng = np.random.default_rng(42)
     run_summaries = []
     ratio_tables = []
     progress_tables = []
     score_samples = []
+    skipped_runs = 0
 
     for _, row in manifest_df.iterrows():
-        points_path = Path(row["points_csv"])
-        if not points_path.exists():
+        resolved_row = row.copy()
+        points_path = coerce_manifest_path(row.get("points_csv"), manifest_dir)
+        if points_path is None or not points_path.is_file():
+            skipped_runs += 1
             continue
+        dataset_dir = coerce_manifest_path(row.get("dataset_dir"), manifest_dir)
+        if dataset_dir is not None:
+            resolved_row["dataset_dir"] = str(dataset_dir)
+        resolved_row["points_csv"] = str(points_path)
         summary, ratio_df, progression_df, sample_df = summarize_run(
-            row,
+            resolved_row,
             ratios=args.ratios,
             progress_bins=args.progress_bins,
             sample_size=args.score_sample_size,
@@ -1414,6 +1439,8 @@ def main() -> None:
     print(f"Study report written to {study_dir}")
     print(f"README : {study_dir / 'README.md'}")
     print(f"PDF    : {study_dir / 'report' / 'paper_report.pdf'}")
+    if skipped_runs:
+        print(f"Skipped {skipped_runs} manifest rows without a usable points CSV")
 
 
 if __name__ == "__main__":

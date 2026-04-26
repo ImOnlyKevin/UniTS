@@ -1,12 +1,20 @@
 Traceback (most recent call last):
-  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 1365, in <module>
+  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 1420, in <module>
     main()
-  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 1182, in main
-    run_summary_df[run_summary_df["has_ground_truth"].astype(bool)]
-  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/core/frame.py", line 7194, in sort_values
-    keys = [self._get_label_or_level_values(x, axis=axis) for x in by]
-  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/core/frame.py", line 7194, in <listcomp>
-    keys = [self._get_label_or_level_values(x, axis=axis) for x in by]
-  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/core/generic.py", line 1914, in _get_label_or_level_values
-    raise KeyError(key)
-KeyError: 'selected_f1'
+  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 1191, in main
+    summary, ratio_df, progression_df, sample_df = summarize_run(
+  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 447, in summarize_run
+    df = load_points(points_path)
+  File "/home/gridsan/kcagle/UniTS/scripts/paper_anomaly_report.py", line 166, in load_points
+    df = pd.read_csv(path)
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 620, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 1620, in __init__
+    self._engine = self._make_engine(f, self.engine)
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/io/parsers/readers.py", line 1880, in _make_engine
+    self.handles = get_handle(
+  File "/home/gridsan/kcagle/.conda/envs/ARGUS/lib/python3.9/site-packages/pandas/io/common.py", line 873, in get_handle
+    handle = open(
+IsADirectoryError: [Errno 21] Is a directory: '.'

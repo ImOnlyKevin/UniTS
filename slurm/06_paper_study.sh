@@ -36,6 +36,7 @@
 # Sweep controls:
 #   SUBSAMPLE_PCTS="0.05 0.10 0.20 0.30" PROMPT_TUNE_EPOCHS="5 10 20 40" sbatch slurm/06_paper_study.sh
 #   STUDY_MODES="prompt_tuning finetune" FINETUNE_EPOCHS="5 10" sbatch slurm/06_paper_study.sh
+#   STUDY_PRESET=fast NUM_WORKERS=6 SATELLITE=ESA sbatch slurm/06_paper_study.sh
 #   SKIP_PREP=1 SKIP_TRAIN=1 STUDY_DIR=/abs/path/to/existing_study sbatch slurm/06_paper_study.sh
 
 set -euo pipefail
@@ -252,6 +253,7 @@ run_torch_experiment() {
         --prompt_tune_epoch "$prompt_tune_epoch" \
         --batch_size "$BATCH_SIZE" \
         --acc_it "$ACC_IT" \
+        --num_workers "$NUM_WORKERS" \
         --dropout "$DROPOUT" \
         --debug "$WANDB_MODE" \
         --project_name "$PROJECT_NAME" \
@@ -395,9 +397,40 @@ MANIFEST_PATH="$STUDY_DIR/study_manifest.tsv"
 mkdir -p "$STUDY_DIR" "$TMP_DIR"
 write_manifest_header
 
+STUDY_PRESET=${STUDY_PRESET:-standard}
+NUM_WORKERS=${NUM_WORKERS:-}
+if [[ -z "$NUM_WORKERS" ]]; then
+    if [[ -n "${SLURM_CPUS_PER_TASK:-}" && "${SLURM_CPUS_PER_TASK}" -gt 2 ]]; then
+        NUM_WORKERS=$((SLURM_CPUS_PER_TASK - 2))
+    else
+        NUM_WORKERS=4
+    fi
+fi
+
+SUBSAMPLE_PCTS_DEFAULT="0.05 0.10 0.20"
+PROMPT_TUNE_EPOCHS_DEFAULT="5 10 20"
+RUN_PER_MISSION_EVAL_DEFAULT=1
+RUN_RATIO_SWEEP_DEFAULT=1
+
+case "$STUDY_PRESET" in
+    standard)
+        ;;
+    fast)
+        SUBSAMPLE_PCTS_DEFAULT="0.10 0.20"
+        PROMPT_TUNE_EPOCHS_DEFAULT="5 10"
+        RUN_PER_MISSION_EVAL_DEFAULT=0
+        RUN_RATIO_SWEEP_DEFAULT=0
+        ;;
+    *)
+        log "ERROR: Unknown STUDY_PRESET='$STUDY_PRESET'"
+        log "       Valid options: standard, fast"
+        exit 1
+        ;;
+esac
+
 STUDY_MODES=${STUDY_MODES:-prompt_tuning}
-SUBSAMPLE_PCTS=${SUBSAMPLE_PCTS:-"0.05 0.10 0.20"}
-PROMPT_TUNE_EPOCHS=${PROMPT_TUNE_EPOCHS:-"5 10 20"}
+SUBSAMPLE_PCTS=${SUBSAMPLE_PCTS:-"$SUBSAMPLE_PCTS_DEFAULT"}
+PROMPT_TUNE_EPOCHS=${PROMPT_TUNE_EPOCHS:-"$PROMPT_TUNE_EPOCHS_DEFAULT"}
 FINETUNE_EPOCHS=${FINETUNE_EPOCHS:-"5 10"}
 RATIOS=${RATIOS:-"0.1 0.25 0.5 1.0 2.0"}
 BASE_ANOMALY_RATIO=${BASE_ANOMALY_RATIO:-1.0}
@@ -405,8 +438,8 @@ CKPT=${CKPT:-"$ROOT_DIR/newcheckpoints/units_x32_pretrain_checkpoint.pth"}
 CHECKPOINTS_DIR=${CHECKPOINTS_DIR:-checkpoints}
 SKIP_PREP=${SKIP_PREP:-0}
 SKIP_TRAIN=${SKIP_TRAIN:-0}
-RUN_PER_MISSION_EVAL=${RUN_PER_MISSION_EVAL:-1}
-RUN_RATIO_SWEEP=${RUN_RATIO_SWEEP:-1}
+RUN_PER_MISSION_EVAL=${RUN_PER_MISSION_EVAL:-$RUN_PER_MISSION_EVAL_DEFAULT}
+RUN_RATIO_SWEEP=${RUN_RATIO_SWEEP:-$RUN_RATIO_SWEEP_DEFAULT}
 RUN_STUDY_REPORT=${RUN_STUDY_REPORT:-1}
 PROJECT_NAME=${PROJECT_NAME:-units_anomaly_paper}
 WANDB_MODE=${WANDB_MODE:-offline}
@@ -435,10 +468,12 @@ log "Starting paper study"
 log "Study dir        : $STUDY_DIR"
 log "Satellite        : $SATELLITE"
 log "Missions         : $MISSIONS"
+log "Study preset     : $STUDY_PRESET"
 log "Study modes      : $STUDY_MODES"
 log "Subsample pcts   : $SUBSAMPLE_PCTS"
 log "Prompt epochs    : $PROMPT_TUNE_EPOCHS"
 log "Finetune epochs  : $FINETUNE_EPOCHS"
+log "Num workers      : $NUM_WORKERS"
 log "Anomaly ratios   : $RATIOS"
 log "Checkpoint       : $CKPT"
 

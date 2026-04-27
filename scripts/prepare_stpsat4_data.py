@@ -46,6 +46,81 @@ RAW_DATA_DIR   = "data/STPSat-4-raw/Sat-4_HS_data"
 DATASET_BASE   = "dataset"
 MISSION_PREFIX = "STPSat4"
 
+STPSAT4_COLUMNS_TO_DROP = {
+    "ADCS": [
+        "CCSDS Version", "CCSDS Type", "CCSDS Sec Hdr Flag", "CCSDS APID",
+        "CCSDS Sequ Flag", "CCSDS Packet Sequence Count", "CCSDS Packet Length",
+        "CCSDS W4 Coarse Time", "CCSDS W5 Coarse Time", "CCSDS W6 Fine Time",
+        "CCSDS Checksum", "Time_Out_JulianDateTAI", "Level_0_Spare1",
+        "Level_0_Spare2", "Level_0_Spare3", "Level_0_Spare4", "Level_0_Spare5",
+        "Level_0_Spare6", "Level_0_Spare7", "Level_0_Spare8", "Level_0_Spare9",
+        "Level_0_Spare10", "Level_0_Sync_Word_BEEF", "Level_0_Sync_Word_CAFE",
+        "CommandTlm_Out_LastAcceptCmdBytes1", "CommandTlm_Out_LastAcceptCmdBytes2",
+        "CommandTlm_Out_LastAcceptCmdBytes3", "CommandTlm_Out_LastAcceptCmdBytes4",
+        "CommandTlm_Out_LastAcceptCmdBytes5", "CommandTlm_Out_LastAcceptCmdBytes6",
+        "CommandTlm_Out_LastAcceptCmdBytes7", "CommandTlm_Out_LastAcceptCmdBytes8",
+        "CommandTlm_Out_LastRejectCmdBytes1", "CommandTlm_Out_LastRejectCmdBytes2",
+        "CommandTlm_Out_LastRejectCmdBytes3", "CommandTlm_Out_LastRejectCmdBytes4",
+        "CommandTlm_Out_LastRejectCmdBytes5", "CommandTlm_Out_LastRejectCmdBytes6",
+        "CommandTlm_Out_LastRejectCmdBytes7", "CommandTlm_Out_LastRejectCmdBytes8",
+        "Tables_Out_Length", "Tables_Out_Offset", "Tables_Out_Checksum",
+        "General_Out_SoftwareVersionCode1", "General_Out_SoftwareVersionCode2",
+        "General_Out_HardwareVersionCode",
+        *[f"Ext_tracker_LEON_L{i:02d}" for i in range(1, 33)],
+        *[f"Ext_tracker2_LEON_L{i:02d}" for i in range(1, 33)],
+        *[f"Ext_tracker_LastAcceptCmdBytes{i}" for i in range(1, 9)],
+        *[f"Ext_tracker_LastRejectCmdBytes{i}" for i in range(1, 9)],
+        *[f"Ext_tracker2_LastAcceptCmdBytes{i}" for i in range(1, 9)],
+        *[f"Ext_tracker2_LastRejectCmdBytes{i}" for i in range(1, 9)],
+        "UTC_Time_Seconds",
+    ],
+    "HRR": [
+        "CCSDS Version", "CCSDS Type", "CCSDS Sec Hdr Flag", "CCSDS APID",
+        "CCSDS Sequ Flag", "CCSDS Packet Sequence Count", "CCSDS Packet Length",
+        "CCSDS W4 Coarse Time", "CCSDS W5 Coarse Time", "CCSDS W6 Fine Time",
+        "CCSDS Checksum", "TRANSMIT_SESSION_ID", "VEHICLE_ID",
+        "TRANSMIT_KEY_INDEX", "RECEIVE_KEY_INDEX", "RED_VERSION_MSS",
+        "RED_VERSION_FABRIC", "GRAY_VERSION_MSS", "GRAY_VERSION_FABRIC",
+        "BLACK_VERSION_MSS", "BLACK_VERSION_FABRIC", "XMIT_VERSION_MSS",
+        "XMIT_VERSION_FABRIC", "RCVR_VERSION_MSS", "RCVR_VERSION_FABRIC",
+        "UTC_Time_Seconds",
+    ],
+    "MRR": [
+        "CCSDS Version", "CCSDS Type", "CCSDS Sec Hdr Flag", "CCSDS APID",
+        "CCSDS Sequ Flag", "CCSDS Packet Sequence Count", "CCSDS Packet Length",
+        "CCSDS W4 Coarse Time", "CCSDS W5 Coarse Time", "CCSDS W6 Fine Time",
+        "CCSDS Checksum", "TRANSMIT_SESSION_ID", "VEHICLE_ID",
+        "TRANSMIT_KEY_INDEX", "RECEIVE_KEY_INDEX", "RED_VERSION_MSS",
+        "RED_VERSION_FABRIC", "GRAY_VERSION_MSS", "GRAY_VERSION_FABRIC",
+        "BLACK_VERSION_MSS", "BLACK_VERSION_FABRIC", "XMIT_VERSION_MSS",
+        "XMIT_VERSION_FABRIC", "RCVR_VERSION_MSS", "RCVR_VERSION_FABRIC",
+        "UTC_Time_Seconds",
+    ],
+    "PCE1": [
+        "CCSDS Version", "CCSDS Type", "CCSDS Sec Hdr Flag", "CCSDS APID",
+        "CCSDS Sequ Flag", "CCSDS Packet Sequence Count", "CCSDS Packet Length",
+        "CCSDS W4 Coarse Time", "CCSDS W5 Coarse Time", "CCSDS W6 Fine Time",
+        "CCSDS Checksum", "SPARE", "09E4SPARE1", "09E4SPARE2", "Spare3",
+        "Last_Good_Command", "Last_Bad_Command",
+        "UTC_Time_Seconds",
+    ],
+    "PCE2": [
+        "CCSDS Version", "CCSDS Type", "CCSDS Sec Hdr Flag", "CCSDS APID",
+        "CCSDS Sequ Flag", "CCSDS Packet Sequence Count", "CCSDS Packet Length",
+        "CCSDS W4 Coarse Time", "CCSDS W5 Coarse Time", "CCSDS W6 Fine Time",
+        "CCSDS Checksum", "SPARE", "09E4SPARE1", "09E4SPARE2", "Spare3",
+        "Last_Good_Command", "Last_Bad_Command",
+        "UTC_Time_Seconds",
+    ],
+    "TCS": [
+        "CCSDS Version", "CCSDS Type", "CCSDS Sec Hdr Flag", "CCSDS APID",
+        "CCSDS Sequ Flag", "CCSDS Packet Sequence Count", "CCSDS Packet Length",
+        "CCSDS W4 Coarse Time", "CCSDS W5 Coarse Time", "CCSDS W6 Fine Time",
+        "CCSDS Checksum", "SPARE", "last_updated_seconds", "last_updated_subseconds",
+        "UTC_Time_Seconds",
+    ],
+}
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -89,6 +164,32 @@ def load_and_concat(files: list, subsystem: str) -> pd.DataFrame:
     combined = pd.concat(dfs, ignore_index=True)
     print(f"  Loaded {len(files)} files → {len(combined):,} rows before dedup")
     return combined
+
+
+def drop_unnecessary_columns(df: pd.DataFrame, subsystem: str) -> pd.DataFrame:
+    """
+    Drop known bookkeeping fields plus any column whose name contains "count".
+
+    The count-based rule is case-insensitive so monotonic counters like
+    "Hardware_Second_counter" and "Command_Accept_Counter" are excluded even if
+    they were not enumerated explicitly.
+    """
+    explicit_drop = set(STPSAT4_COLUMNS_TO_DROP.get(subsystem, []))
+    unnamed_drop = {col for col in df.columns if col.startswith("Unnamed")}
+    count_drop = {col for col in df.columns if "count" in col.casefold()}
+    to_drop = sorted((explicit_drop | unnamed_drop | count_drop) & set(df.columns))
+
+    if not to_drop:
+        return df
+
+    print(
+        "  Dropping "
+        f"{len(to_drop)} columns "
+        f"({len(explicit_drop & set(df.columns))} explicit, "
+        f"{len(count_drop)} count-pattern, "
+        f"{len(unnamed_drop)} unnamed)"
+    )
+    return df.drop(columns=to_drop)
 
 
 def clean_and_resample(df: pd.DataFrame, resample_sec: int) -> pd.DataFrame:
@@ -222,6 +323,9 @@ def process_subsystem(subsystem: str, args) -> dict:
     print(f"  Found {len(files)} CSV files")
 
     df = load_and_concat(files, subsystem)
+
+    # Remove metadata, counters, and similar bookkeeping fields before resampling.
+    df = drop_unnecessary_columns(df, subsystem)
 
     # ── Clean and resample ────────────────────────────────────────────────
     df = clean_and_resample(df, args.resample_sec)

@@ -135,6 +135,8 @@ def parse_args():
                         "Default: 2020-03-19 (~70/30)")
     p.add_argument("--min_train_rows", type=int, default=1000,
                    help="Skip subsystem if train set has fewer rows than this")
+    p.add_argument("--yaml_path", default="data_provider/anomaly_detection_stpsat4.yaml",
+                   help="UniTS YAML config to update with prepared STPSat-4 channel counts")
     return p.parse_args()
 
 
@@ -274,28 +276,50 @@ def save_dataset(out_dir: Path, mission: str,
     print(f"    labels: all zeros (unsupervised — no ground truth)")
 
 
-def update_yaml(yaml_path: str, missions: list, enc_in_map: dict):
-    """Append new STPSat4 mission entries to the anomaly detection YAML."""
+def update_yaml(yaml_path: str, enc_in_map: dict):
+    """Add or refresh STPSat-4 mission entries in the UniTS anomaly YAML."""
     import yaml
 
     with open(yaml_path, "r") as f:
-        config = yaml.safe_load(f)
+        config = yaml.safe_load(f) or {}
+
+    task_dataset = config.setdefault("task_dataset", {})
 
     changed = False
     for mission, enc_in in enc_in_map.items():
-        if mission not in config:
-            config[mission] = {
-                "data":       "anomaly_detection_ESA",
-                "root_path":  f"./dataset/{mission}/",
-                "data_path":  mission,
-                "enc_in":     enc_in,
-                "dec_in":     enc_in,
-                "c_out":      enc_in,
+        if mission not in task_dataset:
+            task_dataset[mission] = {
+                "task_name":    "anomaly_detection",
+                "dataset_name": mission,
+                "dataset":      mission,
+                "data":         mission,
+                "root_path":    f"./dataset/{mission}",
+                "seq_len":      96,
+                "label_len":    0,
+                "pred_len":     0,
+                "features":     "M",
+                "embed":        "timeF",
+                "enc_in":       enc_in,
+                "dec_in":       enc_in,
+                "c_out":        enc_in,
             }
             print(f"  Added YAML entry: {mission} (enc_in={enc_in})")
             changed = True
         else:
-            print(f"  YAML entry already exists: {mission}, skipping")
+            entry = task_dataset[mission]
+            old_dims = (entry.get("enc_in"), entry.get("dec_in"), entry.get("c_out"))
+            new_dims = (enc_in, enc_in, enc_in)
+            if old_dims != new_dims:
+                entry["enc_in"] = enc_in
+                entry["dec_in"] = enc_in
+                entry["c_out"] = enc_in
+                print(
+                    f"  Updated YAML entry: {mission} "
+                    f"(enc_in {old_dims[0]} → {enc_in})"
+                )
+                changed = True
+            else:
+                print(f"  YAML entry already current: {mission} (enc_in={enc_in})")
 
     if changed:
         with open(yaml_path, "w") as f:
@@ -379,11 +403,13 @@ def main():
         enc_in_map.update(result)
 
     # ── Update YAML ───────────────────────────────────────────────────────
-    yaml_path = "data_provider/anomaly_detection_esa.yaml"
+    yaml_path = args.yaml_path
     if enc_in_map and os.path.exists(yaml_path):
         print(f"\n{'='*70}")
         print(f"Updating YAML: {yaml_path}")
-        update_yaml(yaml_path, list(enc_in_map.keys()), enc_in_map)
+        update_yaml(yaml_path, enc_in_map)
+    elif enc_in_map:
+        print(f"\nWARNING: YAML config not found, skipping update: {yaml_path}")
 
     # ── Summary ───────────────────────────────────────────────────────────
     print(f"\n{'='*70}")

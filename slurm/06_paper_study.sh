@@ -138,6 +138,7 @@ PY
 
 validate_dataset() {
     local mission=$1
+    local yaml_path=${2:-}
     local train_npy="$ROOT_DIR/dataset/${mission}/${mission}_train.npy"
     local test_npy="$ROOT_DIR/dataset/${mission}/${mission}_test.npy"
 
@@ -146,16 +147,42 @@ validate_dataset() {
         return 1
     fi
 
-    local train_rows
-    local test_rows
-    train_rows=$(python3 -c "import numpy as np; print(np.load('$train_npy', mmap_mode='r').shape[0])")
-    test_rows=$(python3 -c "import numpy as np; print(np.load('$test_npy', mmap_mode='r').shape[0])")
+    python3 - "$mission" "$train_npy" "$test_npy" "$yaml_path" "$MIN_TRAIN_ROWS" <<'PY'
+import sys
+import numpy as np
+import yaml
 
-    if (( train_rows < MIN_TRAIN_ROWS || test_rows < MIN_TRAIN_ROWS )); then
-        log "Dataset for $mission is too small: train=$train_rows test=$test_rows"
-        return 1
-    fi
-    return 0
+mission, train_npy, test_npy, yaml_path, min_rows_raw = sys.argv[1:6]
+min_rows = int(min_rows_raw)
+
+train_shape = np.load(train_npy, mmap_mode="r").shape
+test_shape = np.load(test_npy, mmap_mode="r").shape
+
+if train_shape[0] < min_rows or test_shape[0] < min_rows:
+    raise SystemExit(
+        f"Dataset for {mission} is too small: "
+        f"train={train_shape[0]} test={test_shape[0]}"
+    )
+
+if train_shape[1] != test_shape[1]:
+    raise SystemExit(
+        f"Dataset column mismatch for {mission}: "
+        f"train={train_shape[1]} test={test_shape[1]}"
+    )
+
+if yaml_path:
+    with open(yaml_path, "r") as handle:
+        config = yaml.safe_load(handle) or {}
+    entry = config.get("task_dataset", {}).get(mission)
+    if entry is None:
+        raise SystemExit(f"Mission {mission} missing from YAML {yaml_path}")
+    enc_in = int(entry["enc_in"])
+    if train_shape[1] != enc_in:
+        raise SystemExit(
+            f"YAML/dataset channel mismatch for {mission}: "
+            f"enc_in={enc_in} train_columns={train_shape[1]}"
+        )
+PY
 }
 
 prepare_requested_data() {
@@ -288,6 +315,13 @@ process_run() {
             "$BASE_ANOMALY_RATIO" "$RATIOS" "failed_yaml" "$dataset_dir" "" "" "" "" "" "" "Could not create single-mission YAML"
         return 1
     }
+
+    if ! validate_dataset "$mission" "$tmp_yaml"; then
+        append_manifest "$run_id" "$mission" "$satellite" "$mode" "$subsample_pct" "$prompt_tune_epoch" "$train_epochs" \
+            "$BASE_ANOMALY_RATIO" "$RATIOS" "failed_dataset" "$dataset_dir" "" "" "" "" "" "" "Dataset validation failed"
+        rm -f "$tmp_yaml"
+        return 1
+    fi
 
     local setting="ALL_task_${run_id}_UniTS_All_ftM_dm${D_MODEL}_el${E_LAYERS}_${DES}_0"
     local checkpoint_dir="$ROOT_DIR/${CHECKPOINTS_DIR}/${setting}"

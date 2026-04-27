@@ -38,34 +38,34 @@ STPSat4-ADCS:
   data: anomaly_detection_ESA
   root_path: ./dataset/STPSat4-ADCS/
   data_path: STPSat4-ADCS
-  enc_in: 623
-  dec_in: 623
-  c_out: 623
+  enc_in: 586
+  dec_in: 586
+  c_out: 586
 STPSat4-HRR:
   data: anomaly_detection_ESA
   root_path: ./dataset/STPSat4-HRR/
   data_path: STPSat4-HRR
-  enc_in: 69
-  dec_in: 69
-  c_out: 69
+  enc_in: 67
+  dec_in: 67
+  c_out: 67
 STPSat4-MRR:
   data: anomaly_detection_ESA
   root_path: ./dataset/STPSat4-MRR/
   data_path: STPSat4-MRR
-  enc_in: 69
-  dec_in: 69
-  c_out: 69
+  enc_in: 67
+  dec_in: 67
+  c_out: 67
 STPSat4-PCE1:
   data: anomaly_detection_ESA
   root_path: ./dataset/STPSat4-PCE1/
   data_path: STPSat4-PCE1
-  enc_in: 58
-  dec_in: 58
-  c_out: 58
+  enc_in: 52
+  dec_in: 52
+  c_out: 52
 STPSat4-PCE2:
   data: anomaly_detection_ESA
   root_path: ./dataset/STPSat4-PCE2/
   data_path: STPSat4-PCE2
-  enc_in: 58
-  dec_in: 58
-  c_out: 58
+  enc_in: 52
+  dec_in: 52
+  c_out: 52

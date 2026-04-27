@@ -24,9 +24,9 @@ task_dataset:
     pred_len: 0
     features: M
     embed: timeF
-    enc_in: 69
-    dec_in: 69
-    c_out: 69
+    enc_in: 67
+    dec_in: 67
+    c_out: 67
   STPSat4-MRR:
     task_name: anomaly_detection
     dataset_name: STPSat4-MRR
@@ -38,9 +38,9 @@ task_dataset:
     pred_len: 0
     features: M
     embed: timeF
-    enc_in: 69
-    dec_in: 69
-    c_out: 69
+    enc_in: 67
+    dec_in: 67
+    c_out: 67
   STPSat4-PCE1:
     task_name: anomaly_detection
     dataset_name: STPSat4-PCE1
@@ -52,9 +52,9 @@ task_dataset:
     pred_len: 0
     features: M
     embed: timeF
-    enc_in: 58
-    dec_in: 58
-    c_out: 58
+    enc_in: 52
+    dec_in: 52
+    c_out: 52
   STPSat4-PCE2:
     task_name: anomaly_detection
     dataset_name: STPSat4-PCE2
@@ -66,9 +66,9 @@ task_dataset:
     pred_len: 0
     features: M
     embed: timeF
-    enc_in: 58
-    dec_in: 58
-    c_out: 58
+    enc_in: 52
+    dec_in: 52
+    c_out: 52
   STPSat4-ADCS:
     task_name: anomaly_detection
     dataset_name: STPSat4-ADCS
@@ -80,6 +80,6 @@ task_dataset:
     pred_len: 0
     features: M
     embed: timeF
-    enc_in: 623
-    dec_in: 623
-    c_out: 623
+    enc_in: 586
+    dec_in: 586
+    c_out: 586

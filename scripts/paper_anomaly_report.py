@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -261,36 +262,34 @@ def compute_window_overlap_metrics(
     if pred_windows.empty:
         return 0.0, 0.0
 
-    pred_hits = 0
-    for _, pred_row in pred_windows.iterrows():
-        hit = any(
-            overlap_fraction(
-                int(pred_row["start_idx"]),
-                int(pred_row["end_idx"]),
-                int(gt_row["start_idx"]),
-                int(gt_row["end_idx"]),
-            )
-            > 0
-            for _, gt_row in gt_windows.iterrows()
-        )
-        pred_hits += int(hit)
+    pred_intervals = pred_windows[["start_idx", "end_idx"]].to_numpy(dtype=np.int64)
+    gt_intervals = gt_windows[["start_idx", "end_idx"]].to_numpy(dtype=np.int64)
 
-    gt_hits = 0
-    for _, gt_row in gt_windows.iterrows():
-        hit = any(
-            overlap_fraction(
-                int(pred_row["start_idx"]),
-                int(pred_row["end_idx"]),
-                int(gt_row["start_idx"]),
-                int(gt_row["end_idx"]),
-            )
-            > 0
-            for _, pred_row in pred_windows.iterrows()
-        )
-        gt_hits += int(hit)
+    pred_hits = np.zeros(len(pred_intervals), dtype=bool)
+    gt_hits = np.zeros(len(gt_intervals), dtype=bool)
+    pred_idx = 0
+    gt_idx = 0
 
-    window_precision = pred_hits / max(len(pred_windows), 1)
-    window_recall = gt_hits / max(len(gt_windows), 1)
+    while pred_idx < len(pred_intervals) and gt_idx < len(gt_intervals):
+        pred_start, pred_end = pred_intervals[pred_idx]
+        gt_start, gt_end = gt_intervals[gt_idx]
+
+        if pred_end <= gt_start:
+            pred_idx += 1
+            continue
+        if gt_end <= pred_start:
+            gt_idx += 1
+            continue
+
+        pred_hits[pred_idx] = True
+        gt_hits[gt_idx] = True
+        if pred_end <= gt_end:
+            pred_idx += 1
+        else:
+            gt_idx += 1
+
+    window_precision = float(pred_hits.mean())
+    window_recall = float(gt_hits.mean())
     return window_precision, window_recall
 
 
@@ -606,7 +605,7 @@ def compute_top_channels_for_reference_runs(
         if not test_path.exists():
             continue
 
-        test_arr = np.load(test_path)
+        test_arr = np.load(test_path, mmap_mode="r")
         n_common = min(len(pred), test_arr.shape[0])
         if n_common <= 0:
             continue
@@ -704,6 +703,10 @@ def save_figure(fig: plt.Figure, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=220, bbox_inches="tight")
     plt.close(fig)
+
+
+def log_progress(message: str) -> None:
+    print(message, flush=True, file=sys.stderr)
 
 
 def plot_reference_overview(reference_df: pd.DataFrame, out_path: Path) -> None:
@@ -1203,16 +1206,20 @@ def main() -> None:
     score_samples = []
     skipped_runs = 0
 
-    for _, row in manifest_df.iterrows():
+    total_runs = len(manifest_df)
+    log_progress(f"Loaded manifest with {total_runs} rows from {manifest_path}")
+    for run_index, (_, row) in enumerate(manifest_df.iterrows(), start=1):
         resolved_row = row.copy()
         points_path = coerce_manifest_path(row.get("points_csv"), manifest_dir)
         if points_path is None or not points_path.is_file():
             skipped_runs += 1
+            log_progress(f"[{run_index}/{total_runs}] Skipping missing points CSV for {row.get('run_id', '<unknown>')}")
             continue
         dataset_dir = coerce_manifest_path(row.get("dataset_dir"), manifest_dir)
         if dataset_dir is not None:
             resolved_row["dataset_dir"] = str(dataset_dir)
         resolved_row["points_csv"] = str(points_path)
+        log_progress(f"[{run_index}/{total_runs}] Summarizing {resolved_row['run_id']}")
         summary, ratio_df, progression_df, sample_df = summarize_run(
             resolved_row,
             ratios=args.ratios,
@@ -1244,6 +1251,7 @@ def main() -> None:
         .loc[:, ["mission", "channels", "train_rows", "test_rows", "test_days", "has_ground_truth"]]
         .reset_index(drop=True)
     )
+    log_progress("Computing top-channel attribution for reference runs")
     top_channels_df = compute_top_channels_for_reference_runs(reference_df, top_n=args.top_channels)
 
     labelled_runs = run_summary_df[run_summary_df["has_ground_truth"].astype(bool)].copy()
@@ -1290,6 +1298,7 @@ def main() -> None:
 
     figures = []
 
+    log_progress("Writing figures")
     fig_path = dirs["figures"] / "figure_01_reference_overview.png"
     plot_reference_overview(reference_df, fig_path)
     figures.append(
@@ -1417,6 +1426,7 @@ def main() -> None:
         )
 
     findings = make_key_findings(reference_df)
+    log_progress("Writing README and PDF")
     write_readme(
         study_dir=study_dir,
         title=args.title,

@@ -19,7 +19,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 
 COLOR_NAVY = "#16324f"
@@ -49,6 +48,25 @@ plt.rcParams.update(
         "legend.frameon": False,
     }
 )
+
+
+def binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    y_true = np.asarray(y_true, dtype=int)
+    y_pred = np.asarray(y_pred, dtype=int)
+    tp = int(((y_true == 1) & (y_pred == 1)).sum())
+    fp = int(((y_true == 0) & (y_pred == 1)).sum())
+    fn = int(((y_true == 1) & (y_pred == 0)).sum())
+    tn = int(((y_true == 0) & (y_pred == 0)).sum())
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    accuracy = (tp + tn) / max(len(y_true), 1)
+    return {
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "accuracy": float(accuracy),
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,9 +136,15 @@ def apply_ratio_threshold(
         target_n = int(round(baseline_flagged * (ratio / max(baseline_ratio, 1e-9))))
     else:
         target_n = int(round(len(scores) * (ratio / 100.0)))
-    target_n = max(1, min(target_n, len(scores)))
-    threshold = float(np.partition(scores, -target_n)[-target_n])
-    return (scores >= threshold).astype(int)
+    finite_mask = np.isfinite(scores)
+    finite_scores = scores[finite_mask]
+    if len(finite_scores) == 0:
+        return np.zeros(len(scores), dtype=int)
+    target_n = max(1, min(target_n, len(finite_scores)))
+    threshold = float(np.partition(finite_scores, -target_n)[-target_n])
+    pred = np.zeros(len(scores), dtype=int)
+    pred[finite_mask] = (scores[finite_mask] >= threshold).astype(int)
+    return pred
 
 
 def discover_summary(study_dir: Path | None) -> Path | None:
@@ -241,6 +265,7 @@ def load_parquet_rows(parquets: dict[str, Path], summary_df: pd.DataFrame | None
         fp = int(((y_true == 0) & (adjusted_pred == 1)).sum())
         fn = int(((y_true == 1) & (adjusted_pred == 0)).sum())
         total = len(df)
+        metrics = binary_metrics(y_true, adjusted_pred)
         anomaly_cols = {"timestamp", "anomaly_score", "is_anomaly_predicted", "is_anomaly_ground_truth"}
         channels = [col for col in df.columns if col not in anomaly_cols and not str(col).endswith("_z")]
 
@@ -252,10 +277,10 @@ def load_parquet_rows(parquets: dict[str, Path], summary_df: pd.DataFrame | None
                 "raw_pred_rate_pct": 100.0 * float(raw_pred.mean()),
                 "adjusted_pred_rate_pct": 100.0 * float(adjusted_pred.mean()),
                 "gt_rate_pct": 100.0 * float(y_true.mean()),
-                "precision": float(precision_score(y_true, adjusted_pred, zero_division=0)),
-                "recall": float(recall_score(y_true, adjusted_pred, zero_division=0)),
-                "f1": float(f1_score(y_true, adjusted_pred, zero_division=0)),
-                "accuracy": float(accuracy_score(y_true, adjusted_pred)),
+                "precision": metrics["precision"],
+                "recall": metrics["recall"],
+                "f1": metrics["f1"],
+                "accuracy": metrics["accuracy"],
                 "tp_rate_pct": 100.0 * tp / max(total, 1),
                 "fp_rate_pct": 100.0 * fp / max(total, 1),
                 "fn_rate_pct": 100.0 * fn / max(total, 1),

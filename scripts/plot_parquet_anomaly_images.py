@@ -18,7 +18,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.metrics import f1_score, precision_score, recall_score
 
 
 COLOR_NAVY = "#16324f"
@@ -54,6 +53,39 @@ plt.rcParams.update(
         "legend.frameon": False,
     }
 )
+
+
+def binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    y_true = np.asarray(y_true, dtype=int)
+    y_pred = np.asarray(y_pred, dtype=int)
+    tp = int(((y_true == 1) & (y_pred == 1)).sum())
+    fp = int(((y_true == 0) & (y_pred == 1)).sum())
+    fn = int(((y_true == 1) & (y_pred == 0)).sum())
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {"precision": float(precision), "recall": float(recall), "f1": float(f1)}
+
+
+def finite_scores(scores: np.ndarray) -> np.ndarray:
+    scores = np.asarray(scores, dtype=float)
+    return scores[np.isfinite(scores)]
+
+
+def plot_hist(ax: plt.Axes, values: np.ndarray, *, bins: np.ndarray | int, color: str, label: str) -> None:
+    values = finite_scores(values)
+    if len(values) == 0:
+        ax.text(
+            0.5,
+            0.5,
+            f"No finite {label.lower()} scores",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            color=COLOR_GRAY,
+        )
+        return
+    ax.hist(values, bins=bins, alpha=0.68, color=color, density=False, label=label)
 
 
 def parse_args() -> argparse.Namespace:
@@ -122,14 +154,21 @@ def apply_ratio_threshold(
     ratio: float,
     baseline_ratio: float,
 ) -> np.ndarray:
+    scores = np.asarray(scores, dtype=float)
     baseline_flagged = int(baseline_pred.sum())
     if baseline_flagged > 0:
         target_n = int(round(baseline_flagged * (ratio / max(baseline_ratio, 1e-9))))
     else:
         target_n = int(round(len(scores) * (ratio / 100.0)))
-    target_n = max(1, min(target_n, len(scores)))
-    threshold = float(np.partition(scores, -target_n)[-target_n])
-    return (scores >= threshold).astype(int)
+    finite_mask = np.isfinite(scores)
+    finite_scores = scores[finite_mask]
+    if len(finite_scores) == 0:
+        return np.zeros(len(scores), dtype=int)
+    target_n = max(1, min(target_n, len(finite_scores)))
+    threshold = float(np.partition(finite_scores, -target_n)[-target_n])
+    pred = np.zeros(len(scores), dtype=int)
+    pred[finite_mask] = (scores[finite_mask] >= threshold).astype(int)
+    return pred
 
 
 def parse_parquets(specs: list[str]) -> dict[str, Path]:
@@ -196,15 +235,16 @@ def compute_summary(mission: str, df: pd.DataFrame, raw_pred: np.ndarray) -> dic
     tp = int(((y_true == 1) & (adjusted_pred == 1)).sum())
     fp = int(((y_true == 0) & (adjusted_pred == 1)).sum())
     fn = int(((y_true == 1) & (adjusted_pred == 0)).sum())
+    metrics = binary_metrics(y_true, adjusted_pred)
     return {
         "mission": mission,
         "n_points": total,
         "raw_pred_rate_pct": 100.0 * float(raw_pred.mean()),
         "adjusted_pred_rate_pct": 100.0 * float(adjusted_pred.mean()),
         "gt_rate_pct": 100.0 * float(y_true.mean()),
-        "precision": float(precision_score(y_true, adjusted_pred, zero_division=0)),
-        "recall": float(recall_score(y_true, adjusted_pred, zero_division=0)),
-        "f1": float(f1_score(y_true, adjusted_pred, zero_division=0)),
+        "precision": metrics["precision"],
+        "recall": metrics["recall"],
+        "f1": metrics["f1"],
         "tp": tp,
         "fp": fp,
         "fn": fn,
@@ -279,19 +319,27 @@ def save_score_plot(
         adjusted_pred = adjusted_pred[idx]
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.8))
-    axes[0].hist(score[y_true == 0], bins=80, alpha=0.75, color=COLOR_NAVY, density=True, label="GT normal")
+    finite_score = finite_scores(score)
+    if len(finite_score):
+        bins: np.ndarray | int = np.linspace(float(finite_score.min()), float(finite_score.max()), 81)
+        if np.isclose(bins[0], bins[-1]):
+            bins = 80
+    else:
+        bins = 80
+
+    plot_hist(axes[0], score[y_true == 0], bins=bins, color=COLOR_NAVY, label="GT normal")
     if y_true.sum():
-        axes[0].hist(score[y_true == 1], bins=80, alpha=0.65, color=COLOR_RED, density=True, label="GT anomaly")
+        plot_hist(axes[0], score[y_true == 1], bins=bins, color=COLOR_RED, label="GT anomaly")
     axes[0].set_title(f"{mission}: Score by Ground Truth")
     axes[0].set_xlabel("Anomaly score")
-    axes[0].set_ylabel("Density")
+    axes[0].set_ylabel("Count")
     axes[0].legend(loc="upper right")
 
-    axes[1].hist(score[adjusted_pred == 0], bins=80, alpha=0.75, color=COLOR_GREEN, density=True, label="Pred normal")
-    axes[1].hist(score[adjusted_pred == 1], bins=80, alpha=0.65, color=COLOR_GOLD, density=True, label="Pred anomaly")
+    plot_hist(axes[1], score[adjusted_pred == 0], bins=bins, color=COLOR_GREEN, label="Pred normal")
+    plot_hist(axes[1], score[adjusted_pred == 1], bins=bins, color=COLOR_GOLD, label="Pred anomaly")
     axes[1].set_title(f"{mission}: Score by Point-Adjusted Prediction")
     axes[1].set_xlabel("Anomaly score")
-    axes[1].set_ylabel("Density")
+    axes[1].set_ylabel("Count")
     axes[1].legend(loc="upper right")
 
     fig.tight_layout()

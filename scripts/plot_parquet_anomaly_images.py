@@ -235,10 +235,12 @@ def compute_summary(mission: str, df: pd.DataFrame, raw_pred: np.ndarray) -> dic
     tp = int(((y_true == 1) & (adjusted_pred == 1)).sum())
     fp = int(((y_true == 0) & (adjusted_pred == 1)).sum())
     fn = int(((y_true == 1) & (adjusted_pred == 0)).sum())
+    tn = int(((y_true == 0) & (adjusted_pred == 0)).sum())
     metrics = binary_metrics(y_true, adjusted_pred)
     return {
         "mission": mission,
         "n_points": total,
+        "has_ground_truth": bool(y_true.sum() > 0),
         "raw_pred_rate_pct": 100.0 * float(raw_pred.mean()),
         "adjusted_pred_rate_pct": 100.0 * float(adjusted_pred.mean()),
         "gt_rate_pct": 100.0 * float(y_true.mean()),
@@ -248,6 +250,7 @@ def compute_summary(mission: str, df: pd.DataFrame, raw_pred: np.ndarray) -> dic
         "tp": tp,
         "fp": fp,
         "fn": fn,
+        "tn": tn,
         "tp_rate_pct": 100.0 * tp / max(total, 1),
         "fp_rate_pct": 100.0 * fp / max(total, 1),
         "fn_rate_pct": 100.0 * fn / max(total, 1),
@@ -282,15 +285,19 @@ def timeline_bins(df: pd.DataFrame, raw_pred: np.ndarray, bins: int) -> pd.DataF
 def save_timeline_plot(mission: str, df: pd.DataFrame, raw_pred: np.ndarray, bins: int, out_dir: Path) -> None:
     timeline = timeline_bins(df, raw_pred, bins)
     fig, ax = plt.subplots(figsize=(13, 4.8))
-    ax.plot(timeline["timestamp"], timeline["raw_rate_pct"], color=COLOR_GRAY, linewidth=1.8, label="Raw threshold")
-    ax.plot(
-        timeline["timestamp"],
-        timeline["adjusted_rate_pct"],
-        color=COLOR_TEAL,
-        linewidth=2.2,
-        label="Point-adjusted predicted",
-    )
-    ax.plot(timeline["timestamp"], timeline["gt_rate_pct"], color=COLOR_RED, linewidth=2.0, label="Ground truth")
+    if np.allclose(timeline["raw_rate_pct"], timeline["adjusted_rate_pct"], equal_nan=True):
+        ax.plot(timeline["timestamp"], timeline["adjusted_rate_pct"], color=COLOR_TEAL, linewidth=2.2, label="Predicted")
+    else:
+        ax.plot(timeline["timestamp"], timeline["raw_rate_pct"], color=COLOR_GRAY, linewidth=1.8, label="Raw threshold")
+        ax.plot(
+            timeline["timestamp"],
+            timeline["adjusted_rate_pct"],
+            color=COLOR_TEAL,
+            linewidth=2.2,
+            label="Point-adjusted predicted",
+        )
+    if timeline["gt_rate_pct"].sum() > 0:
+        ax.plot(timeline["timestamp"], timeline["gt_rate_pct"], color=COLOR_RED, linewidth=2.0, label="Ground truth")
     ax.set_title(f"{mission}: Anomaly Rate Over Test Timeline")
     ax.set_ylabel("Percent of bin")
     ax.set_xlabel("Time")
@@ -347,34 +354,145 @@ def save_score_plot(
     plt.close(fig)
 
 
-def save_metric_overview(summary_df: pd.DataFrame, out_dir: Path) -> None:
-    summary_df = summary_df.sort_values("mission").reset_index(drop=True)
-    x = np.arange(len(summary_df))
-    missions = summary_df["mission"].tolist()
+def format_missions(ax: plt.Axes, x: np.ndarray, missions: list[str]) -> None:
+    ax.set_xticks(x, missions, rotation=20, ha="right")
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.8))
-    width = 0.28
-    axes[0].bar(x - width, summary_df["raw_pred_rate_pct"], width=width, color=COLOR_GRAY, label="Raw threshold")
-    axes[0].bar(x, summary_df["adjusted_pred_rate_pct"], width=width, color=COLOR_TEAL, label="Point-adjusted pred")
-    axes[0].bar(x + width, summary_df["gt_rate_pct"], width=width, color=COLOR_RED, label="Ground truth")
-    axes[0].set_xticks(x, missions, rotation=20, ha="right")
-    axes[0].set_title("Metric-Aligned Anomaly Rates")
-    axes[0].set_ylabel("Percent of test points")
-    axes[0].legend(loc="upper right")
 
-    metric_width = 0.22
-    axes[1].bar(x - metric_width, summary_df["precision"], width=metric_width, color=COLOR_NAVY, label="Precision")
-    axes[1].bar(x, summary_df["recall"], width=metric_width, color=COLOR_GREEN, label="Recall")
-    axes[1].bar(x + metric_width, summary_df["f1"], width=metric_width, color=COLOR_GOLD, label="F1")
-    axes[1].set_xticks(x, missions, rotation=20, ha="right")
-    axes[1].set_ylim(0, 1.05)
-    axes[1].set_title("Point-Adjusted Metrics")
-    axes[1].set_ylabel("Score")
-    axes[1].legend(loc="lower right")
+def annotate_bars(ax: plt.Axes, decimals: int = 2) -> None:
+    for patch in ax.patches:
+        height = patch.get_height()
+        if not np.isfinite(height):
+            continue
+        ax.annotate(
+            f"{height:.{decimals}f}",
+            (patch.get_x() + patch.get_width() / 2, height),
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            color=COLOR_DARK,
+            xytext=(0, 3),
+            textcoords="offset points",
+        )
 
+
+def save_labeled_rate_plot(summary_df: pd.DataFrame, out_dir: Path) -> Path | None:
+    labelled = summary_df[summary_df["has_ground_truth"].astype(bool)].sort_values("mission").reset_index(drop=True)
+    if labelled.empty:
+        return None
+    x = np.arange(len(labelled))
+    missions = labelled["mission"].tolist()
+    width = 0.34
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(x - width / 2, labelled["adjusted_pred_rate_pct"], width=width, color=COLOR_TEAL, label="Predicted")
+    ax.bar(x + width / 2, labelled["gt_rate_pct"], width=width, color=COLOR_RED, label="Ground truth")
+    format_missions(ax, x, missions)
+    ax.set_title("Labeled Missions: Predicted vs Ground-Truth Rate")
+    ax.set_ylabel("Percent of test points")
+    ax.legend(loc="upper right")
+    annotate_bars(ax)
     fig.tight_layout()
-    fig.savefig(out_dir / "parquet_metric_overview.png", dpi=220, bbox_inches="tight")
+    path = out_dir / "labeled_predicted_vs_ground_truth_rate.png"
+    fig.savefig(path, dpi=220, bbox_inches="tight")
     plt.close(fig)
+    return path
+
+
+def save_labeled_metrics_plot(summary_df: pd.DataFrame, out_dir: Path) -> Path | None:
+    labelled = summary_df[summary_df["has_ground_truth"].astype(bool)].sort_values("mission").reset_index(drop=True)
+    if labelled.empty:
+        return None
+    x = np.arange(len(labelled))
+    missions = labelled["mission"].tolist()
+    width = 0.22
+    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    ax.bar(x - width, labelled["precision"], width=width, color=COLOR_NAVY, label="Precision")
+    ax.bar(x, labelled["recall"], width=width, color=COLOR_GREEN, label="Recall")
+    ax.bar(x + width, labelled["f1"], width=width, color=COLOR_GOLD, label="F1")
+    format_missions(ax, x, missions)
+    ax.set_ylim(0, 1.08)
+    ax.set_title("Labeled Missions: Point-Adjusted Detection Metrics")
+    ax.set_ylabel("Score")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3)
+    annotate_bars(ax, decimals=3)
+    fig.tight_layout()
+    path = out_dir / "labeled_point_adjusted_detection_metrics.png"
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def save_unlabeled_predicted_rate_plot(summary_df: pd.DataFrame, out_dir: Path) -> Path | None:
+    unlabeled = summary_df[~summary_df["has_ground_truth"].astype(bool)].sort_values(
+        "adjusted_pred_rate_pct", ascending=False
+    )
+    if unlabeled.empty:
+        return None
+    fig, ax = plt.subplots(figsize=(10, max(4.5, 0.38 * len(unlabeled))))
+    y = np.arange(len(unlabeled))
+    ax.barh(y, unlabeled["adjusted_pred_rate_pct"], color=COLOR_TEAL)
+    ax.set_yticks(y, unlabeled["mission"])
+    ax.invert_yaxis()
+    ax.set_title("Unlabeled Missions: Predicted Anomaly Burden")
+    ax.set_xlabel("Predicted percent of test points")
+    ax.set_ylabel("Mission")
+    for idx, value in enumerate(unlabeled["adjusted_pred_rate_pct"]):
+        ax.text(value, idx, f" {value:.3f}%", va="center", ha="left", fontsize=9, color=COLOR_DARK)
+    fig.tight_layout()
+    path = out_dir / "unlabeled_predicted_anomaly_burden.png"
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def save_confusion_matrix(row: pd.Series, out_dir: Path) -> Path:
+    matrix = np.array([[row["tn"], row["fp"]], [row["fn"], row["tp"]]], dtype=float)
+    total = matrix.sum()
+    pct = matrix / max(total, 1) * 100.0
+    fig, ax = plt.subplots(figsize=(6.4, 5.8))
+    image = ax.imshow(pct, cmap="Blues", vmin=0, vmax=max(float(pct.max()), 1.0))
+    ax.set_title(f"{row['mission']} Confusion Matrix")
+    ax.set_xlabel("Predicted label")
+    ax.set_ylabel("Ground truth label")
+    ax.set_xticks([0, 1], ["Normal", "Anomaly"])
+    ax.set_yticks([0, 1], ["Normal", "Anomaly"])
+    labels = np.array([["TN", "FP"], ["FN", "TP"]])
+    for i in range(2):
+        for j in range(2):
+            percent = pct[i, j]
+            text_color = "white" if percent > pct.max() * 0.55 else COLOR_DARK
+            ax.text(
+                j,
+                i,
+                f"{labels[i, j]}\n{int(matrix[i, j]):,}\n{percent:.2f}%",
+                ha="center",
+                va="center",
+                color=text_color,
+                fontsize=11,
+                fontweight="bold",
+            )
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Percent of test points")
+    fig.tight_layout()
+    mission_slug = str(row["mission"]).lower().replace(" ", "_").replace("/", "_")
+    path = out_dir / f"{mission_slug}_confusion_matrix.png"
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def save_metric_overview(summary_df: pd.DataFrame, out_dir: Path) -> list[Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outputs = []
+    for maybe_path in [
+        save_labeled_rate_plot(summary_df, out_dir),
+        save_labeled_metrics_plot(summary_df, out_dir),
+        save_unlabeled_predicted_rate_plot(summary_df, out_dir),
+    ]:
+        if maybe_path is not None:
+            outputs.append(maybe_path)
+    labelled = summary_df[summary_df["has_ground_truth"].astype(bool)].sort_values("mission")
+    for _, row in labelled.iterrows():
+        outputs.append(save_confusion_matrix(row, out_dir))
+    return outputs
 
 
 def main() -> None:
@@ -408,8 +526,11 @@ def main() -> None:
 
     summary_df = pd.DataFrame(rows)
     summary_df.to_csv(overview_dir / "parquet_metric_summary.csv", index=False)
-    save_metric_overview(summary_df, overview_dir)
-    print(f"Saved Parquet anomaly images under {args.results_dir}")
+    overview_outputs = save_metric_overview(summary_df, overview_dir)
+    print("Saved Parquet anomaly images:")
+    print(f"  {overview_dir / 'parquet_metric_summary.csv'}")
+    for path in overview_outputs:
+        print(f"  {path}")
 
 
 if __name__ == "__main__":

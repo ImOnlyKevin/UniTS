@@ -88,6 +88,12 @@ def plot_hist(ax: plt.Axes, values: np.ndarray, *, bins: np.ndarray | int, color
     ax.hist(values, bins=bins, alpha=0.68, color=color, density=False, label=label)
 
 
+def add_legend_if_present(ax: plt.Axes, **kwargs: object) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if handles and labels:
+        ax.legend(**kwargs)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate per-mission anomaly figures from telemetry Parquet files."
@@ -309,7 +315,7 @@ def save_timeline_plot(mission: str, df: pd.DataFrame, raw_pred: np.ndarray, bin
     ax.set_title(f"{mission}: Anomaly Rate Over Test Timeline")
     ax.set_ylabel("Percent of bin")
     ax.set_xlabel("Time")
-    ax.legend(loc="upper right")
+    add_legend_if_present(ax, loc="upper right")
     fig.autofmt_xdate()
     fig.tight_layout()
     fig.savefig(out_dir / f"{mission}_metric_aligned_timeline.png", dpi=220, bbox_inches="tight")
@@ -348,14 +354,14 @@ def save_score_plot(
     axes[0].set_title(f"{mission}: Score by Ground Truth")
     axes[0].set_xlabel("Anomaly score")
     axes[0].set_ylabel("Count")
-    axes[0].legend(loc="upper right")
+    add_legend_if_present(axes[0], loc="upper right")
 
     plot_hist(axes[1], score[adjusted_pred == 0], bins=bins, color=COLOR_GREEN, label="Pred normal")
     plot_hist(axes[1], score[adjusted_pred == 1], bins=bins, color=COLOR_GOLD, label="Pred anomaly")
     axes[1].set_title(f"{mission}: Score by Point-Adjusted Prediction")
     axes[1].set_xlabel("Anomaly score")
     axes[1].set_ylabel("Count")
-    axes[1].legend(loc="upper right")
+    add_legend_if_present(axes[1], loc="upper right")
 
     fig.tight_layout()
     fig.savefig(out_dir / f"{mission}_score_distributions.png", dpi=220, bbox_inches="tight")
@@ -396,7 +402,7 @@ def save_labeled_rate_plot(summary_df: pd.DataFrame, out_dir: Path) -> Path | No
     format_missions(ax, x, missions)
     ax.set_title("Labeled Missions: Predicted vs Ground-Truth Rate")
     ax.set_ylabel("Percent of test points")
-    ax.legend(loc="upper right")
+    add_legend_if_present(ax, loc="upper right")
     annotate_bars(ax)
     fig.tight_layout()
     path = out_dir / "labeled_predicted_vs_ground_truth_rate.png"
@@ -420,7 +426,7 @@ def save_labeled_metrics_plot(summary_df: pd.DataFrame, out_dir: Path) -> Path |
     ax.set_ylim(0, 1.08)
     ax.set_title("Labeled Missions: Point-Adjusted Detection Metrics")
     ax.set_ylabel("Score")
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3)
+    add_legend_if_present(ax, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3)
     annotate_bars(ax, decimals=3)
     fig.tight_layout()
     path = out_dir / "labeled_point_adjusted_detection_metrics.png"

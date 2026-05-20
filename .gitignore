@@ -136,7 +136,7 @@ logs
 # Ignore raw ESA dataset
 /data/ESA-ADB-raw/
 wandb/
-results/
+results/*/telemetry/
 dataset/
 checkpoints/
 data/ESA-ADB-raw/

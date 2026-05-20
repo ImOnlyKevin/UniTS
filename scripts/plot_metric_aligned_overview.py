@@ -111,8 +111,15 @@ def parse_args() -> argparse.Namespace:
         "--out",
         type=Path,
         help=(
-            "Output PNG path. Defaults to <study-dir>/figures/figure_01_labeled_mission_performance.png "
-            "when --study-dir is used, otherwise results/figures/metric_aligned_overview/."
+            "Deprecated: output path for the old combined quad figure. Separate figures are written by default."
+        ),
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        help=(
+            "Directory for generated PNGs. Defaults to <study-dir>/figures/labeled_mission_performance "
+            "when --study-dir is used, otherwise results/figures/metric_aligned_overview."
         ),
     )
     parser.add_argument(
@@ -228,6 +235,10 @@ def load_summary_rows(summary_path: Path) -> pd.DataFrame:
                 "recall": float(row["selected_recall"]),
                 "f1": float(row["selected_f1"]),
                 "accuracy": float(row.get("selected_accuracy", np.nan)),
+                "tp": int(row["selected_tp"]),
+                "fp": int(row["selected_fp"]),
+                "fn": int(row["selected_fn"]),
+                "tn": int(row["selected_tn"]),
                 "tp_rate_pct": 100.0 * float(row["selected_tp"]) / max(total, 1),
                 "fp_rate_pct": 100.0 * float(row["selected_fp"]) / max(total, 1),
                 "fn_rate_pct": 100.0 * float(row["selected_fn"]) / max(total, 1),
@@ -276,6 +287,7 @@ def load_parquet_rows(parquets: dict[str, Path], summary_df: pd.DataFrame | None
         tp = int(((y_true == 1) & (adjusted_pred == 1)).sum())
         fp = int(((y_true == 0) & (adjusted_pred == 1)).sum())
         fn = int(((y_true == 1) & (adjusted_pred == 0)).sum())
+        tn = int(((y_true == 0) & (adjusted_pred == 0)).sum())
         total = len(df)
         metrics = binary_metrics(y_true, adjusted_pred)
         anomaly_cols = {"timestamp", "anomaly_score", "is_anomaly_predicted", "is_anomaly_ground_truth"}
@@ -294,6 +306,10 @@ def load_parquet_rows(parquets: dict[str, Path], summary_df: pd.DataFrame | None
                 "recall": metrics["recall"],
                 "f1": metrics["f1"],
                 "accuracy": metrics["accuracy"],
+                "tp": tp,
+                "fp": fp,
+                "fn": fn,
+                "tn": tn,
                 "tp_rate_pct": 100.0 * tp / max(total, 1),
                 "fp_rate_pct": 100.0 * fp / max(total, 1),
                 "fn_rate_pct": 100.0 * fn / max(total, 1),
@@ -370,17 +386,147 @@ def plot_overview(df: pd.DataFrame, out_path: Path, title: str) -> None:
     plt.close(fig)
 
 
+def format_missions(ax: plt.Axes, x: np.ndarray, missions: list[str]) -> None:
+    ax.set_xticks(x, missions, rotation=15, ha="right")
+
+
+def annotate_bars(ax: plt.Axes, decimals: int = 2) -> None:
+    for patch in ax.patches:
+        height = patch.get_height()
+        if not np.isfinite(height):
+            continue
+        ax.annotate(
+            f"{height:.{decimals}f}",
+            (patch.get_x() + patch.get_width() / 2, height),
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color=COLOR_DARK,
+            xytext=(0, 3),
+            textcoords="offset points",
+        )
+
+
+def plot_channels(df: pd.DataFrame, out_path: Path) -> None:
+    df = df.sort_values("mission").reset_index(drop=True)
+    missions = df["mission"].tolist()
+    x = np.arange(len(df))
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(x, df["channels"], color=COLOR_TEAL, width=0.55)
+    format_missions(ax, x, missions)
+    ax.set_title("Labeled Mission Channel Counts")
+    ax.set_ylabel("Channels")
+    annotate_bars(ax, decimals=0)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_anomaly_rates(df: pd.DataFrame, out_path: Path) -> None:
+    df = df.sort_values("mission").reset_index(drop=True)
+    missions = df["mission"].tolist()
+    x = np.arange(len(df))
+    width = 0.34
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(x - width / 2, df["adjusted_pred_rate_pct"], width=width, color=COLOR_TEAL, label="Predicted")
+    ax.bar(x + width / 2, df["gt_rate_pct"], width=width, color=COLOR_RED, label="Ground truth")
+    format_missions(ax, x, missions)
+    ax.set_title("Point-Adjusted Anomaly Rate")
+    ax.set_ylabel("Percent of test points")
+    ax.legend(loc="upper right")
+    annotate_bars(ax)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_detection_metrics(df: pd.DataFrame, out_path: Path) -> None:
+    df = df.sort_values("mission").reset_index(drop=True)
+    missions = df["mission"].tolist()
+    x = np.arange(len(df))
+    width = 0.22
+    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    ax.bar(x - width, df["precision"], width=width, color=COLOR_NAVY, label="Precision")
+    ax.bar(x, df["recall"], width=width, color=COLOR_GREEN, label="Recall")
+    ax.bar(x + width, df["f1"], width=width, color=COLOR_GOLD, label="F1")
+    format_missions(ax, x, missions)
+    ax.set_ylim(0, 1.08)
+    ax.set_title("Point-Adjusted Detection Metrics")
+    ax.set_ylabel("Score")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3)
+    annotate_bars(ax, decimals=3)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_confusion_matrix(row: pd.Series, out_path: Path) -> None:
+    matrix = np.array([[row["tn"], row["fp"]], [row["fn"], row["tp"]]], dtype=float)
+    total = matrix.sum()
+    pct = matrix / max(total, 1) * 100.0
+
+    fig, ax = plt.subplots(figsize=(6.4, 5.8))
+    image = ax.imshow(pct, cmap="Blues", vmin=0, vmax=max(float(pct.max()), 1.0))
+    ax.set_title(f"{row['mission']} Confusion Matrix")
+    ax.set_xlabel("Predicted label")
+    ax.set_ylabel("Ground truth label")
+    ax.set_xticks([0, 1], ["Normal", "Anomaly"])
+    ax.set_yticks([0, 1], ["Normal", "Anomaly"])
+
+    labels = np.array([["TN", "FP"], ["FN", "TP"]])
+    for i in range(2):
+        for j in range(2):
+            value = matrix[i, j]
+            percent = pct[i, j]
+            text_color = "white" if percent > pct.max() * 0.55 else COLOR_DARK
+            ax.text(
+                j,
+                i,
+                f"{labels[i, j]}\n{int(value):,}\n{percent:.2f}%",
+                ha="center",
+                va="center",
+                color=text_color,
+                fontsize=11,
+                fontweight="bold",
+            )
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Percent of test points")
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_figure_bundle(df: pd.DataFrame, out_dir: Path) -> list[Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outputs = [
+        out_dir / "channels_per_labeled_mission.png",
+        out_dir / "point_adjusted_anomaly_rate.png",
+        out_dir / "point_adjusted_detection_metrics.png",
+    ]
+    plot_channels(df, outputs[0])
+    plot_anomaly_rates(df, outputs[1])
+    plot_detection_metrics(df, outputs[2])
+    for _, row in df.sort_values("mission").iterrows():
+        mission_slug = str(row["mission"]).lower().replace(" ", "_").replace("/", "_")
+        path = out_dir / f"{mission_slug}_confusion_matrix.png"
+        plot_confusion_matrix(row, path)
+        outputs.append(path)
+    return outputs
+
+
 def plot_default_mission_copies(df: pd.DataFrame, results_dir: Path) -> None:
     for mission in df["mission"].drop_duplicates():
         mission_df = df[df["mission"] == mission]
-        out_path = (
+        out_dir = (
             results_dir
             / str(mission)
             / "figures"
             / "metric_aligned_overview"
-            / "figure_01_labeled_mission_performance.png"
         )
-        plot_overview(mission_df, out_path, "Labeled Mission Performance: Point-Adjusted Metrics")
+        plot_figure_bundle(mission_df, out_dir)
 
 
 def main() -> None:
@@ -406,8 +552,10 @@ def main() -> None:
 
     default_out = None
     if args.study_dir:
+        default_out_dir = args.study_dir / "figures" / "labeled_mission_performance"
         default_out = args.study_dir / "figures" / "figure_01_labeled_mission_performance.png"
     else:
+        default_out_dir = args.results_dir / "figures" / "metric_aligned_overview"
         default_out = (
             args.results_dir
             / "figures"
@@ -420,10 +568,16 @@ def main() -> None:
         if args.include_unlabeled
         else "Labeled Mission Performance: Point-Adjusted Metrics"
     )
-    plot_overview(rows, out_path, title)
+    if args.out:
+        plot_overview(rows, out_path, title)
+        outputs = [out_path]
+    else:
+        outputs = plot_figure_bundle(rows, args.out_dir or default_out_dir)
     if args.out is None and args.study_dir is None:
         plot_default_mission_copies(rows, args.results_dir)
-    print(f"Saved {out_path}")
+    print("Saved:")
+    for path in outputs:
+        print(f"  {path}")
 
 
 if __name__ == "__main__":

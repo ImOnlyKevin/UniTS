@@ -1,2 +1,2 @@
 mission,n_points,has_ground_truth,raw_pred_rate_pct,adjusted_pred_rate_pct,gt_rate_pct,precision,recall,f1,tp,fp,fn,tn,tp_rate_pct,fp_rate_pct,fn_rate_pct
-STPSat7-HRR,7968,False,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0,7968,0.0,0.0,0.0
+STPSat7-HRR,12384,False,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0,12384,0.0,0.0,0.0

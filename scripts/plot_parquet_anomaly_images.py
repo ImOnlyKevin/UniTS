@@ -134,6 +134,14 @@ def parse_args() -> argparse.Namespace:
         default=250_000,
         help="Maximum points sampled for score histograms.",
     )
+    parser.add_argument(
+        "--include-labeled-overview",
+        action="store_true",
+        help=(
+            "Also write labeled ESA overview and confusion-matrix figures. By default those are "
+            "left to plot_metric_aligned_overview.py to avoid duplicate images."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -479,19 +487,24 @@ def save_confusion_matrix(row: pd.Series, out_dir: Path) -> Path:
     return path
 
 
-def save_metric_overview(summary_df: pd.DataFrame, out_dir: Path) -> list[Path]:
+def save_metric_overview(summary_df: pd.DataFrame, out_dir: Path, include_labeled: bool = False) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     outputs = []
-    for maybe_path in [
-        save_labeled_rate_plot(summary_df, out_dir),
-        save_labeled_metrics_plot(summary_df, out_dir),
-        save_unlabeled_predicted_rate_plot(summary_df, out_dir),
-    ]:
+    maybe_paths = [save_unlabeled_predicted_rate_plot(summary_df, out_dir)]
+    if include_labeled:
+        maybe_paths.extend(
+            [
+                save_labeled_rate_plot(summary_df, out_dir),
+                save_labeled_metrics_plot(summary_df, out_dir),
+            ]
+        )
+    for maybe_path in maybe_paths:
         if maybe_path is not None:
             outputs.append(maybe_path)
-    labelled = summary_df[summary_df["has_ground_truth"].astype(bool)].sort_values("mission")
-    for _, row in labelled.iterrows():
-        outputs.append(save_confusion_matrix(row, out_dir))
+    if include_labeled:
+        labelled = summary_df[summary_df["has_ground_truth"].astype(bool)].sort_values("mission")
+        for _, row in labelled.iterrows():
+            outputs.append(save_confusion_matrix(row, out_dir))
     return outputs
 
 
@@ -526,7 +539,11 @@ def main() -> None:
 
     summary_df = pd.DataFrame(rows)
     summary_df.to_csv(overview_dir / "parquet_metric_summary.csv", index=False)
-    overview_outputs = save_metric_overview(summary_df, overview_dir)
+    overview_outputs = save_metric_overview(
+        summary_df,
+        overview_dir,
+        include_labeled=args.include_labeled_overview,
+    )
     print("Saved Parquet anomaly images:")
     print(f"  {overview_dir / 'parquet_metric_summary.csv'}")
     for path in overview_outputs:

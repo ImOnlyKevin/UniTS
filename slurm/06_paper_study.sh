@@ -8,7 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=96:00:00
+#SBATCH --time=128:00:00
 
 # Paper-oriented anomaly-detection study:
 #   - prepares requested missions

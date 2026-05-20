@@ -206,7 +206,7 @@ PYEOF
         torchrun --nnodes 1 --nproc-per-node=1 --master_port $PORT run.py \
             --fix_seed 2021 \
             --is_training 1 \
-            --subsample_pct 0.2 \
+            --subsample_pct 0.1 \
             --model_id ${MISSION_LOWER} \
             --pretrained_weight "$CKPT" \
             --model UniTS \
@@ -221,7 +221,7 @@ PYEOF
             --learning_rate 5e-5 \
             --weight_decay 1e-2 \
             --train_epochs 0 \
-            --prompt_tune_epoch 30 \
+            --prompt_tune_epoch 10 \
             --batch_size 64 \
             --acc_it 8 \
             --dropout 0.0 \

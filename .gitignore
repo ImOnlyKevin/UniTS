@@ -148,3 +148,5 @@ logs/
 *.zip
 
 /data/
+
+results/paper_study/

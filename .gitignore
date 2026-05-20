@@ -137,6 +137,8 @@ logs
 /data/ESA-ADB-raw/
 wandb/
 results/*/telemetry/
+results/ESA-Mission1/ESA-Mission1_telemetry.csv
+results/ESA-Mission2/ESA-Mission2_telemetry.csv
 dataset/
 checkpoints/
 data/ESA-ADB-raw/

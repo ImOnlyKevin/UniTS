@@ -69,9 +69,15 @@ def binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     }
 
 
+def as_bool(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create a metric-aligned reference overview figure from study tables or telemetry Parquets."
+        description="Create a metric-aligned labeled-mission performance figure from study tables or telemetry Parquets."
     )
     parser.add_argument(
         "--results-dir",
@@ -105,9 +111,14 @@ def parse_args() -> argparse.Namespace:
         "--out",
         type=Path,
         help=(
-            "Output PNG path. Defaults to <study-dir>/figures/figure_01_metric_aligned_overview.png "
+            "Output PNG path. Defaults to <study-dir>/figures/figure_01_labeled_mission_performance.png "
             "when --study-dir is used, otherwise results/figures/metric_aligned_overview/."
         ),
+    )
+    parser.add_argument(
+        "--include-unlabeled",
+        action="store_true",
+        help="Include missions without ground truth. By default only labeled missions are plotted.",
     )
     return parser.parse_args()
 
@@ -209,6 +220,7 @@ def load_summary_rows(summary_path: Path) -> pd.DataFrame:
                 "mission": row["mission"],
                 "channels": int(row["channels"]),
                 "n_points": total,
+                "has_ground_truth": as_bool(row.get("has_ground_truth", True)),
                 "raw_pred_rate_pct": raw_rate,
                 "adjusted_pred_rate_pct": adjusted_pred_rate,
                 "gt_rate_pct": float(row["selected_gt_rate_pct"]),
@@ -274,6 +286,7 @@ def load_parquet_rows(parquets: dict[str, Path], summary_df: pd.DataFrame | None
                 "mission": mission,
                 "channels": len(channels),
                 "n_points": total,
+                "has_ground_truth": bool(y_true.sum() > 0),
                 "raw_pred_rate_pct": 100.0 * float(raw_pred.mean()),
                 "adjusted_pred_rate_pct": 100.0 * float(adjusted_pred.mean()),
                 "gt_rate_pct": 100.0 * float(y_true.mean()),
@@ -289,7 +302,17 @@ def load_parquet_rows(parquets: dict[str, Path], summary_df: pd.DataFrame | None
     return pd.DataFrame(rows)
 
 
-def plot_overview(df: pd.DataFrame, out_path: Path) -> None:
+def filter_labeled_missions(df: pd.DataFrame) -> pd.DataFrame:
+    if "has_ground_truth" in df.columns:
+        labelled = df[df["has_ground_truth"].astype(bool)].copy()
+    else:
+        labelled = df[df["gt_rate_pct"] > 0].copy()
+    if labelled.empty:
+        raise ValueError("No labeled missions with ground truth were found.")
+    return labelled
+
+
+def plot_overview(df: pd.DataFrame, out_path: Path, title: str) -> None:
     df = df.sort_values("mission").reset_index(drop=True)
     missions = df["mission"].tolist()
     x = np.arange(len(df))
@@ -340,7 +363,7 @@ def plot_overview(df: pd.DataFrame, out_path: Path) -> None:
     axes[1, 1].set_ylabel("Percent of test points")
     axes[1, 1].legend(loc="upper right")
 
-    fig.suptitle("Reference Run Overview: Point-Adjusted Metrics", fontsize=16, fontweight="bold", y=1.01)
+    fig.suptitle(title, fontsize=16, fontweight="bold", y=1.01)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
@@ -355,9 +378,9 @@ def plot_default_mission_copies(df: pd.DataFrame, results_dir: Path) -> None:
             / str(mission)
             / "figures"
             / "metric_aligned_overview"
-            / "figure_01_metric_aligned_overview.png"
+            / "figure_01_labeled_mission_performance.png"
         )
-        plot_overview(mission_df, out_path)
+        plot_overview(mission_df, out_path, "Labeled Mission Performance: Point-Adjusted Metrics")
 
 
 def main() -> None:
@@ -378,13 +401,26 @@ def main() -> None:
             )
         rows = load_parquet_rows(parquets, summary_raw)
 
+    if not args.include_unlabeled:
+        rows = filter_labeled_missions(rows)
+
     default_out = None
     if args.study_dir:
-        default_out = args.study_dir / "figures" / "figure_01_metric_aligned_overview.png"
+        default_out = args.study_dir / "figures" / "figure_01_labeled_mission_performance.png"
     else:
-        default_out = args.results_dir / "figures" / "metric_aligned_overview" / "figure_01_metric_aligned_overview.png"
+        default_out = (
+            args.results_dir
+            / "figures"
+            / "metric_aligned_overview"
+            / "figure_01_labeled_mission_performance.png"
+        )
     out_path = args.out or default_out or Path("figure_01_metric_aligned_overview.png")
-    plot_overview(rows, out_path)
+    title = (
+        "Reference Run Overview: Point-Adjusted Metrics"
+        if args.include_unlabeled
+        else "Labeled Mission Performance: Point-Adjusted Metrics"
+    )
+    plot_overview(rows, out_path, title)
     if args.out is None and args.study_dir is None:
         plot_default_mission_copies(rows, args.results_dir)
     print(f"Saved {out_path}")
